@@ -52,7 +52,7 @@ def handle_choice(choice):
     }
     func = menu_functions.get(choice, lambda: console.print("[red]Opción no válida.[/]"))
     return func()
-
+#
 def manage_submenu(options):
     while True:
         display_menu("Submenú", options)
