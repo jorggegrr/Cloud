@@ -8,7 +8,7 @@ import json
 import uuid
 
 
-IMAGE_DIR = '/imagenes/'
+IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
 
 def load_image_data():
@@ -149,12 +149,82 @@ def image_management():
         elif choice == '3':
             break
 
+def create_user():
+    # Establecer la conexión con la base de datos
+    cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+    cursor = cnx.cursor()
+
+    username = console.input("Nombre de usuario: ")
+    password = console.input("Contraseña: ", password=True)
+    rol_option = console.input("Rol (1 para 'admin', 2 para 'usuario'): ")
+
+    # Convertir la opción de rol en el string correspondiente
+    rol = 'admin' if rol_option == '1' else 'usuario'
+
+    # Generar el hash SHA-256 de la contraseña
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    # Generar un token único para el usuario
+    token = '4b9efd8df8de6f1f0ce461ef5ff19b5f3294776beffb8f1b16ef9f9df6a2b6f2'
+
+    # Ejecutar la consulta SQL
+    query = ("INSERT INTO usuario (username, password, rol, token) VALUES (%s, %s, %s, %s)")
+    cursor.execute(query, (username, password_hash, rol, token))
+
+    # Confirmar la transacción
+    cnx.commit()
+
+    console.print(f"[bold green]Usuario {username} creado con éxito.[/]")
+
+    # Cerrar la conexión con la base de datos
+    cursor.close()
+    cnx.close()
+
+def list_users():
+    # Establecer la conexión con la base de datos
+    cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+    cursor = cnx.cursor()
+
+    # Ejecutar la consulta SQL
+    query = ("SELECT username, rol FROM usuario")
+    cursor.execute(query)
+
+    # Recuperar todos los usuarios
+    users = cursor.fetchall()
+
+    # Imprimir los usuarios
+    for user in users:
+        console.print(f"Nombre de usuario: {user[0]}, Rol: {user[1]}")
+
+    # Cerrar la conexión con la base de datos
+    cursor.close()
+    cnx.close()
+
+
+
 
 def slice_management():
     console.print("[bold green]Acción seleccionada: Gestión de Slices[/]")
 
 def user_management():
-    console.print("[bold green]Acción seleccionada: Gestión de Usuarios[/]")
+    while True:
+        options = {
+            '1': "Listar Usuarios",
+            '2': "Crear Usuario",
+            '3': "Regresar al Menú Principal"
+        }
+        display_menu("Gestión de Usuarios", options)
+        choice = prompt_for_choice(options)
+        if choice == '1':
+            list_users()
+        elif choice == '2':
+            create_user()
+        elif choice == '3':
+            break
 
 @click.command()
 def main():
