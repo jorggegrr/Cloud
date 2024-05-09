@@ -8,7 +8,7 @@ import json
 import uuid
 
 
-IMAGE_DIR = '/imagenes/'
+IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
 
 def load_image_data():
