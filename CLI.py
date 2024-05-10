@@ -16,6 +16,23 @@ import tempfile
 
 IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
+JSON_FILE = '/home/ubuntu/slice_info.json'
+
+
+
+# Zonas de disponibilidad
+availability_zones = {
+    '1': {'name': 'worker1', 'vcpus': 4, 'ram': 16, 'disk': 100},
+    '2': {'name': 'worker2', 'vcpus': 8, 'ram': 32, 'disk': 200},
+    '3': {'name': 'worker3', 'vcpus': 16, 'ram': 64, 'disk': 400}
+}
+
+def select_availability_zone():
+    display_menu("Zonas de disponibilidad", {key: f"{value['name']} (vCPUs: {value['vcpus']}, RAM: {value['ram']} GB, Disco: {value['disk']} GB)" for key, value in availability_zones.items()})
+    zone_choice = prompt_for_choice(availability_zones.keys())
+    return availability_zones[zone_choice]
+
+
 
 def load_image_data():
     if os.path.exists(IMAGE_DATA_FILE):
@@ -190,6 +207,15 @@ def tree_topology():
 
     G = nx.balanced_tree(r=num_branches, h=num_levels)
 
+    # Generar nodos
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+
+    # Preguntar al usuario sobre la conexión a internet
+    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+
+    # Generar enlaces de red ficticios
+    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+
     pos = nx.spring_layout(G)  # Posicionamiento de los nodos
     nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=500, font_size=8)
 
@@ -207,6 +233,7 @@ def tree_topology():
 
     console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
 
+    return nodes, internet_access, network_links
 
 
 def slice_management():
@@ -235,9 +262,30 @@ def slice_management():
             if template_choice == '1':
                 console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
                 console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                tree_topology()
+                nodes, internet_access, network_links = tree_topology()
+            # Seleccionar zona de disponibilidad
+            availability_zone = select_availability_zone()
+            console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
+            # Generar JSON
+            slice_info = {
+                'architecture': architecture_options[architecture_choice],
+                'slice_name': slice_name,
+                'nodes': nodes,
+                'topology_type': 'Árbol' if template_choice == '1' else 'Desconocido',
+                'network_links': network_links,
+                'internet_access': internet_access,
+                'image': image_name,
+                'flavor': flavor,
+                'availability_zone': availability_zone
+            }
+            # Guardar JSON en un archivo
+            with open(JSON_FILE, 'w') as f:
+                json.dump(slice_info, f, indent=4)
+            console.print(f"[bold green]Información del slice guardada en {JSON_FILE}.[/]")
         elif choice == '2':
             break
+
+
 
 def user_management():
     while True:
