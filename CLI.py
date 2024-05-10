@@ -9,10 +9,13 @@ import os
 import json
 import uuid
 import asciinet
+<<<<<<< HEAD
 from PIL import Image
 import tempfile
 
 
+=======
+>>>>>>> d5c7a833d1abcc73d742ddedadec8fb5eb57cf68
 
 IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
@@ -50,7 +53,29 @@ def upload_image():
     console.print(f"[bold green]Imagen {filename} subida con éxito con el ID {id}.[/]")
 
 console = Console()
+<<<<<<< HEAD
 
+=======
+>>>>>>> d5c7a833d1abcc73d742ddedadec8fb5eb57cf68
+
+def select_image():
+    list_images()
+    image_id = console.input("Ingrese el ID de la imagen a utilizar: ")
+    data = load_image_data()
+    if image_id in data:
+        return data[image_id]['filename']
+    else:
+        console.print("[bold red]ID de imagen inválido, por favor intente de nuevo.[/]")
+        return select_image()
+
+def select_flavor():
+    flavors = {
+        '1': {'name': 'm1.tiny', 'vcpus': 1, 'disk': 1, 'ram': 512},
+        '2': {'name': 'm1.small', 'vcpus': 1, 'disk': 20, 'ram': 2048}
+    }
+    display_menu("Flavors disponibles", {key: f"{value['name']} (VCPUs: {value['vcpus']}, Disk: {value['disk']} GB, RAM: {value['ram']} MB)" for key, value in flavors.items()})
+    flavor_choice = prompt_for_choice(flavors.keys())
+    return flavors[flavor_choice]
 
 def select_image():
     list_images()
@@ -177,6 +202,7 @@ def list_users():
     cursor.close()
     cnx.close()
 
+<<<<<<< HEAD
 
 def tree_topology():
     console.print("[bold green]Creando una topología tipo árbol[/]")
@@ -209,6 +235,21 @@ def tree_topology():
 
 
 
+=======
+def tree_topology():
+    console.print("[bold green]Creando una topología tipo árbol[/]")
+    num_branches = int(console.input("Ingrese el número de ramas: "))
+    num_levels = int(console.input("Ingrese el número de niveles: "))
+    if num_branches < 1 or num_levels < 1 or (num_branches == 2 and num_levels == 2):
+        console.print("[bold red]Parámetros inválidos, intente de nuevo.[/]")
+        return
+    G = nx.balanced_tree(r=num_branches, h=num_levels)
+    ascii_graph = asciinet.graph_to_ascii(G)
+    console.print(ascii_graph)
+    console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
+
+    
+>>>>>>> d5c7a833d1abcc73d742ddedadec8fb5eb57cf68
 def slice_management():
     while True:
         options = {
