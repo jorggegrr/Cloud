@@ -217,10 +217,11 @@ def tree_topology():
     network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
 
     pos = nx.spring_layout(G)  # Posicionamiento de los nodos
-    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=500, font_size=8)
+    plt.figure(figsize=(12, 8))  # Ajusta el tamaño de la figura
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
-        plt.savefig(temp.name)
+        plt.savefig(temp.name,dpi=300)
         temp_image_name = temp.name
 
     img = Image.open(temp_image_name)
