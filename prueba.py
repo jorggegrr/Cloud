@@ -8,7 +8,7 @@ import os
 from PIL import Image
 
 console = Console()
-#hola
+#hola a
 def display_menu(title, options):
     table = Table(title=title, show_header=False, title_justify="left")
     for key, value in options.items():
