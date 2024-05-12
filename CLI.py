@@ -277,10 +277,63 @@ def create_linear_topology():
     return nodes, internet_access, network_links
 
 
-def display_topology(G):
-    pos = nx.spring_layout(G)
+
+
+
+
+
+
+def create_bus_topology():
+    console.print("[bold green]Creando una topología tipo bus[/]")
+
+    num_vms = int(console.input("Ingrese el número de VMs: "))
+    if num_vms < 2:
+        console.print("[bold red]Debe haber al menos dos VMs para formar una topología tipo bus.[/]")
+        return
+
+    G = nx.Graph()  # Crea un grafo vacío para la topología de bus
+    G.add_nodes_from(range(num_vms))  # Agrega nodos para las VMs
+
+    # Generar nodos
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+
+    # Preguntar al usuario sobre la conexión a internet
+    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+
+    # Generar enlaces de red: conecta todos los nodos a un nodo central que representa el bus
+    bus_node = num_vms  # ID del nodo del bus (un número mayor que el ID de cualquier VM)
+    network_links = [{'source': i, 'target': bus_node} for i in range(num_vms)]
+
+    # Mostrar la topología
+    display_topology(G, topology_type="Bus", bus_node=bus_node)  # Indicamos que es una topología de bus
+
+    console.print(f"[bold green]Topología tipo bus finalizada con {len(G.nodes) - 1} VMs.[/]")
+    return nodes, internet_access, network_links
+
+
+def display_topology(G, topology_type="General", bus_node=None):
+    # Configura el layout según el tipo de topología
+    if topology_type == "Bus":
+        pos = {node: (node, 0) for node in G.nodes() if node != bus_node}  # Posicionamiento lineal para VMs en el bus
+        if bus_node is not None:
+            pos[bus_node] = ((max(pos.keys()) + min(pos.keys())) / 2, -0.2)  # Posicionamiento del nodo del bus
+    else:
+        pos = nx.spring_layout(G)  # Layout por defecto para otros tipos
+
     plt.figure(figsize=(12, 8))
-    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
+    
+    # Dibuja los nodos y las etiquetas
+    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=800)
+    nx.draw_networkx_labels(G, pos, font_size=12, font_color='black')
+
+    # Dibuja las conexiones
+    if topology_type == "Bus" and bus_node is not None:
+        for node in G.nodes():
+            if node != bus_node:
+                plt.plot([pos[node][0], pos[bus_node][0]], [pos[node][1], pos[bus_node][1]], 'k-', lw=2)
+        plt.plot([min(pos.values())[0], max(pos.values())[0]], [pos[bus_node][1], pos[bus_node][1]], 'k-', lw=2) # Línea del bus
+    else:
+        nx.draw_networkx_edges(G, pos, edge_color='gray')
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
         plt.savefig(temp.name, dpi=300)
@@ -293,6 +346,14 @@ def display_topology(G):
 
     os.remove(temp_image_name)
 
+
+
+
+
+
+
+
+
 def slice_management():
     while True:
         options = {
@@ -300,10 +361,11 @@ def slice_management():
             '2': "Listar Slices",
             '3': "Mostrar JSON de Slice",
             '4': "Mostrar Topologia",
-            '5': "Regresar al Menú Principal" 
+            '5': "Regresar al Menú Principal"
         }
         display_menu("Gestión de Slices", options)
         choice = prompt_for_choice(options)
+
         if choice == '1':
             slice_name = console.input("Nombre del Slice: ")
             # Verificar si el nombre del slice ya existe para el usuario actual
@@ -335,7 +397,8 @@ def slice_management():
             flavor = select_flavor()
             template_options = {
                 '1': "Plantilla (Árbol)",
-                '2': "Plantilla (Lineal)"
+                '2': "Plantilla (Lineal)",
+                '3': "Plantilla (Bus)"  # Nueva opción para topología de bus
             }
             display_menu("Plantilla", template_options)
             template_choice = prompt_for_choice(template_options)
@@ -349,12 +412,17 @@ def slice_management():
                 console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
                 nodes, internet_access, network_links = create_linear_topology()
                 topology_type = 'Lineal'
+            elif template_choice == '3':  # Manejar la nueva opción de topología de bus
+                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
+                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
+                nodes, internet_access, network_links = create_bus_topology()
+                topology_type = 'Bus'
             # Seleccionar zona de disponibilidad
             availability_zone = select_availability_zone()
             console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
             # Generar JSON
             slice_info = {
-                'timestamp': datetime.datetime.now().isoformat(),  # Agregamos un timestamp
+                'timestamp': datetime.datetime.now().isoformat(),
                 'architecture': architecture_options[architecture_choice],
                 'slice_name': slice_name,
                 'nodes': nodes,
@@ -363,13 +431,12 @@ def slice_management():
                 'internet_access': internet_access,
                 'image': image_name,
                 'flavor': flavor,
-                'availability_zone': availability_zone,
+                'availability_zone': availability_zone
             }
 
             if topology_type == 'Árbol':
-                slice_info['num_branches'] = num_branches  # Agregamos num_branches al JSON
-                slice_info['num_levels'] = num_levels      # Agregamos num_levels al JSON
-
+                slice_info['num_branches'] = num_branches
+                slice_info['num_levels'] = num_levels
 
             if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:  # Verificamos si el archivo existe y no está vacío
                 with open(JSON_FILE, 'r') as f:
@@ -455,7 +522,7 @@ def slice_management():
             cursor.close()
             cnx.close()
 
-        elif choice == '4': # Mostrar Topología
+        elif choice == '4':  # Mostrar Topología
             slice_name = console.input("Nombre del Slice: ")
             cnx = mariadb.connect(user='root', password='Cisco12345',
                                   host='127.0.0.1',
@@ -475,15 +542,21 @@ def slice_management():
                             G = nx.path_graph(len(data['nodes']))
                             for link in data['network_links']:
                                 G.add_edge(link['source'], link['target'])
+                        elif data['topology_type'] == 'Bus':  # Manejar la topología de bus
+                            G = nx.Graph()  # Crea un grafo vacío
+                            G.add_nodes_from(range(len(data['nodes'])))  # Agrega nodos para las VMs
+                            bus_node = len(data['nodes'])  # Define el ID del nodo del bus
+                            for link in data['network_links']:
+                                G.add_edge(link['source'], link['target'])  # Agrega los enlaces
+
                         else:
                             console.print("[bold red]Tipo de topología no reconocido.[/]")
                             continue
 
-                        display_topology(G)  # Asumiendo que tienes una función display_topology
+                        display_topology(G, data['topology_type'], bus_node=bus_node)  # Pasar el tipo de topología
                         
             cursor.close()
             cnx.close()
-        
         elif choice == '5':
             break
 
