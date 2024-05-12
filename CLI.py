@@ -32,8 +32,6 @@ def select_availability_zone():
     zone_choice = prompt_for_choice(availability_zones.keys())
     return availability_zones[zone_choice]
 
-
-
 def load_image_data():
     if os.path.exists(IMAGE_DATA_FILE):
         with open(IMAGE_DATA_FILE, 'r') as f:
@@ -68,7 +66,6 @@ def upload_image():
 
 console = Console()
 
-
 def select_image():
     list_images()
     image_id = console.input("Ingrese el ID de la imagen a utilizar: ")
@@ -87,10 +84,6 @@ def select_flavor():
     display_menu("Flavors disponibles", {key: f"{value['name']} (VCPUs: {value['vcpus']}, Disk: {value['disk']} GB, RAM: {value['ram']} MB)" for key, value in flavors.items()})
     flavor_choice = prompt_for_choice(flavors.keys())
     return flavors[flavor_choice]
-
-
-
-
 
 def display_menu(title, options):
     table = Table(title=title, show_header=False, title_justify="left")
@@ -195,7 +188,6 @@ def list_users():
     cursor.close()
     cnx.close()
 
-
 def tree_topology():
     console.print("[bold green]Creando una topología tipo árbol[/]")
 
@@ -226,7 +218,7 @@ def tree_topology():
         temp_image_name = temp.name
 
     img = Image.open(temp_image_name)
-    img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)  # Cambia ANTIALIAS por LANCZOS
+    #img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)  # Cambia ANTIALIAS por LANCZOS
     img.save(temp_image_name)
 
     os.system(f'viu {temp_image_name}')
@@ -237,8 +229,69 @@ def tree_topology():
 
     return nodes, internet_access, network_links, num_branches, num_levels
 
+def create_linear_topology():
+    console.print("[bold green]Creando una topología lineal[/]")
 
-# ... (El resto de tu código se mantiene igual)
+    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+    if num_vms < 2:
+        console.print("[bold red]Debe haber al menos dos VMs para formar una topología lineal.[/]")
+        return
+
+    G = nx.path_graph(num_vms)
+
+    # Generar nodos
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+
+    # Preguntar al usuario sobre la conexión a internet
+    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+
+    # Generar enlaces de red
+    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+
+    # Mostrar la topología inicial
+    display_topology(G)
+
+    while True:
+        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+        if add_more == 'n':
+            break
+
+        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+        last_vm_id = max(G.nodes)
+        for i in range(1, num_new_vms + 1):
+            new_vm_id = last_vm_id + i
+            target_vm_id = int(console.input(f"Seleccione hacia qué ID de VM existente desea enlazar la nueva VM {new_vm_id}: "))
+            if target_vm_id in G.nodes:
+                G.add_edge(new_vm_id, target_vm_id)
+                nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
+                network_links.append({'source': new_vm_id, 'target': target_vm_id})
+            else:
+                console.print("[bold red]ID de VM inválido, por favor intente de nuevo.[/]")
+                i -= 1
+
+        # Mostrar la topología actualizada
+        display_topology(G)
+
+    console.print(f"[bold green]Topología lineal finalizada con {len(G.nodes)} VMs.[/]")
+
+    return nodes, internet_access, network_links
+
+
+def display_topology(G):
+    pos = nx.spring_layout(G)
+    plt.figure(figsize=(12, 8))
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
+        plt.savefig(temp.name, dpi=300)
+        temp_image_name = temp.name
+
+    img = Image.open(temp_image_name)
+    img.save(temp_image_name)
+
+    os.system(f'viu {temp_image_name}')
+
+    os.remove(temp_image_name)
 
 def slice_management():
     while True:
@@ -267,7 +320,6 @@ def slice_management():
                         cnx.close()
                         return
 
-
             cursor.close()
             cnx.close()
             architecture_options = {
@@ -279,7 +331,8 @@ def slice_management():
             image_name = select_image()
             flavor = select_flavor()
             template_options = {
-                '1': "Plantilla (Árbol)"
+                '1': "Plantilla (Árbol)",
+                '2': "Plantilla (Lineal)"
             }
             display_menu("Plantilla", template_options)
             template_choice = prompt_for_choice(template_options)
@@ -287,6 +340,12 @@ def slice_management():
                 console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
                 console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
                 nodes, internet_access, network_links, num_branches, num_levels = tree_topology()
+                topology_type = 'Árbol'
+            elif template_choice == '2':
+                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
+                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
+                nodes, internet_access, network_links = create_linear_topology()
+                topology_type = 'Lineal'
             # Seleccionar zona de disponibilidad
             availability_zone = select_availability_zone()
             console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
@@ -296,16 +355,19 @@ def slice_management():
                 'architecture': architecture_options[architecture_choice],
                 'slice_name': slice_name,
                 'nodes': nodes,
-                'topology_type': 'Árbol' if template_choice == '1' else 'Otro',
+                'topology_type': topology_type,
                 'network_links': network_links,
                 'internet_access': internet_access,
                 'image': image_name,
                 'flavor': flavor,
                 'availability_zone': availability_zone,
-                'num_branches': num_branches,  # Agregamos num_branches al JSON
-                'num_levels': num_levels  # Agregamos num_levels al JSON
             }
-            # Guardar JSON en un archivo
+
+            if topology_type == 'Árbol':
+                slice_info['num_branches'] = num_branches  # Agregamos num_branches al JSON
+                slice_info['num_levels'] = num_levels      # Agregamos num_levels al JSON
+
+
             if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:  # Verificamos si el archivo existe y no está vacío
                 with open(JSON_FILE, 'r') as f:
                     existing_slices = json.load(f)
@@ -327,7 +389,7 @@ def slice_management():
                 # Si no hay datos para este usuario, insertamos la nueva lista de slices
                 slices = [slice_info]
                 query = ("UPDATE SLICE SET JSON = %s WHERE username = %s")
-                cursor.execute(query, (username, json.dumps(slices)))
+                cursor.execute(query, (json.dumps(slices), username))
             else:
                 # Si ya hay datos para este usuario, los recuperamos y añadimos el nuevo slice
                 slices = json.loads(result[0])
@@ -344,8 +406,8 @@ def slice_management():
         elif choice == '2':
             break
 
-# ... (El resto de tu código se mantiene igual)
 
+# ... (El resto de tu código se mantiene igual)
 
 def user_management():
     while True:
