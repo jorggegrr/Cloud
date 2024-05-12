@@ -223,21 +223,8 @@ def tree_topology():
     # Generar enlaces de red ficticios
     network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
 
-    pos = nx.spring_layout(G)  # Posicionamiento de los nodos
-    plt.figure(figsize=(12, 8))  # Ajusta el tamaño de la figura
-    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
-
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
-        plt.savefig(temp.name,dpi=300)
-        temp_image_name = temp.name
-
-    img = Image.open(temp_image_name)
-    #img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)  # Cambia ANTIALIAS por LANCZOS
-    img.save(temp_image_name)
-
-    os.system(f'viu {temp_image_name}')
-
-    os.remove(temp_image_name)
+    # Mostrar y guardar la topologia
+    display_topology(G)
 
     console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
 
@@ -290,13 +277,6 @@ def create_linear_topology():
 
     return nodes, internet_access, network_links
 
-
-
-
-
-
-
-
 def create_bus_topology():
     console.print("[bold green]Creando una topología tipo bus[/]")
 
@@ -333,6 +313,50 @@ def create_bus_topology():
     console.print(f"[bold green]Topología tipo bus finalizada con {len(G.nodes) - 1} VMs.[/]")
     return nodes, internet_access, network_links
 
+def create_mesh_topology():
+    console.print("[bold green]Creando una topología en malla[/]")
+
+    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+    if num_vms < 2:
+        console.print("[bold red]Debe haber al menos dos VMs para formar una topología en malla.[/]")
+        return
+
+    # Crear una topología en malla completa
+    G = nx.complete_graph(num_vms)
+
+    # Generar nodos
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+
+    # Preguntar al usuario sobre la conexión a internet
+    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+
+    # Generar enlaces de red ficticios
+    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+
+    # Mostrar y guardar la topologia
+    display_topology(G)
+
+    while True:
+        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+        if add_more == 'n':
+            break
+
+        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+        last_vm_id = max(G.nodes) + 1  # Comenzamos a añadir VMs desde el siguiente ID disponible
+        total_vms = len(G.nodes) + num_new_vms
+
+        # Reconstruir la topología en malla con las VMs adicionales
+        G = nx.complete_graph(total_vms)
+
+        # Actualizar nodos y enlaces de red
+        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+
+        # Mostrar la topología actualizada
+        display_topology(G)
+
+    console.print(f"[bold green]Topología en malla finalizada con {len(G.nodes)} VMs.[/]")
+    return nodes, internet_access, network_links
 
 def display_topology(G, topology_type="General", bus_node=None):
     plt.figure(figsize=(12, 4))  # Ajusta el tamaño de la figura 
@@ -367,6 +391,10 @@ def display_topology(G, topology_type="General", bus_node=None):
             plt.title('Topología de Árbol')
         elif topology_type == "Lineal":
             plt.title('Topología Lineal')
+        elif topology_type == "Malla":
+            plt.title('Topología de Malla')
+        elif topology_type == "Anillo":
+            plt.title('Topología de Anillo')
 
     plt.grid(False)
     plt.axis('off')
@@ -376,19 +404,51 @@ def display_topology(G, topology_type="General", bus_node=None):
         plt.savefig(temp.name, dpi=300)
         temp_image_name = temp.name
 
-    img = Image.open(temp_image_name)
-    img.save(temp_image_name)
-
+    # Mostrar la topologia en la terminal
     os.system(f'viu {temp_image_name}')
     os.remove(temp_image_name)
 
 
+def create_ring_topology():
+    console.print("[bold green]Creando una topología en anillo[/]")
 
+    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+    if num_vms < 3:
+        console.print("[bold red]Debe haber al menos tres VMs para formar una topología en anillo.[/]")
+        return
 
+    G = nx.cycle_graph(num_vms)
 
+    # Generar nodos
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
 
+    # Preguntar al usuario sobre la conexión a internet
+    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
 
+    # Generar enlaces de red
+    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
 
+    # Mostrar la topología inicial
+    display_topology(G)
+
+    while True:
+        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+        if add_more == 'n':
+            break
+
+        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+        # Ajustamos el ID más alto actual para asegurar que no haya solapamiento
+        last_vm_id = max(G.nodes) + 1
+        total_vms = len(G.nodes) + num_new_vms
+
+        # Eliminar todas las conexiones antiguas y agregar todos los nodos de nuevo para reconstruir el anillo
+        G = nx.cycle_graph(total_vms)
+        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+        display_topology(G)
+
+    console.print(f"[bold green]Topología en anillo finalizada con {len(G.nodes)} VMs.[/]")
+    return nodes, internet_access, network_links
 
 def slice_management():
     while True:
@@ -434,7 +494,9 @@ def slice_management():
             template_options = {
                 '1': "Plantilla (Árbol)",
                 '2': "Plantilla (Lineal)",
-                '3': "Plantilla (Bus)"  # Nueva opción para topología de bus
+                '3': "Plantilla (Bus)",  # Nueva opción para topología de bus
+                '4': "Plantilla (Malla)",   # Nueva opción para topología de malla
+                '5': "Plantilla (Anillo)"
             }
             display_menu("Plantilla", template_options)
             template_choice = prompt_for_choice(template_options)
@@ -453,6 +515,16 @@ def slice_management():
                 console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
                 nodes, internet_access, network_links = create_bus_topology()
                 topology_type = 'Bus'
+            elif template_choice == '4': # Manejar la nueva opción de topología de malla
+                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
+                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
+                nodes, internet_access, network_links = create_mesh_topology()
+                topology_type = 'Malla'
+            elif template_choice == '5':
+                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
+                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
+                nodes, internet_access, network_links = create_ring_topology()
+                topology_type = 'Anillo'
             # Seleccionar zona de disponibilidad
             availability_zone = select_availability_zone()
             console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
@@ -483,6 +555,7 @@ def slice_management():
             else:
                 existing_slices = []  # Inicializamos existing_slices como una lista vacía si el archivo no existe o está vacío
             existing_slices.append(slice_info)
+            
             # Almacenar el JSON en la base de datos
             cnx = mariadb.connect(user='root', password='Cisco12345',
                                   host='127.0.0.1',
@@ -572,6 +645,7 @@ def slice_management():
                 slice_data = json.loads(slice[0])
                 for data in slice_data:
                     if data is not None and data['slice_name'] == slice_name:
+                        bus_node = None # Asignar un valor predeterminado a bus_node
                         if data['topology_type'] == 'Árbol':
                             G = nx.balanced_tree(r=data['num_branches'], h=data['num_levels'])
                         elif data['topology_type'] == 'Lineal':
@@ -584,7 +658,14 @@ def slice_management():
                             bus_node = len(data['nodes'])  # Define el ID del nodo del bus
                             for link in data['network_links']:
                                 G.add_edge(link['source'], link['target'])  # Agrega los enlaces
-
+                        elif data['topology_type'] == 'Malla':
+                            G = nx.complete_graph(len(data['nodes']))
+                            for link in data['network_links']:
+                                G.add_edge(link['source'], link['target'])
+                        elif data['topology_type'] == 'Anillo':
+                            G = nx.cycle_graph(len(data['nodes']))
+                            for link in data['network_links']:
+                                G.add_edge(link['source'], link['target'])
                         else:
                             console.print("[bold red]Tipo de topología no reconocido.[/]")
                             continue
