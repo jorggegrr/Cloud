@@ -366,7 +366,7 @@ def user_management():
 @click.command()
 def main():
     global username
-    role = login()
+    username,role = login()
     while True:
         choice = main_menu(role)
         if choice == '2':
