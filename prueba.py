@@ -6,9 +6,17 @@ from rich.table import Table
 import tempfile
 import os
 from PIL import Image
+import datetime
 
 console = Console()
-#hola a
+#log_prueba
+log_file = "log.txt"
+def log_event(message):
+    with open(log_file, "a") as file:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        file.write(f"{timestamp}: {message}\n")
+
+
 def display_menu(title, options):
     table = Table(title=title, show_header=False, title_justify="left")
     for key, value in options.items():
@@ -18,52 +26,65 @@ def display_menu(title, options):
 def prompt_for_choice(options):
     choice = None
     while choice not in options:
-        choice = console.input("[bold magenta]Seleccione una opción: [/]").strip()
-        if choice not in options:
-            console.print("[bold red]Opción inválida, por favor intente de nuevo.[/]")
+        try:
+            choice = console.input("[bold magenta]Seleccione una opción: [/]").strip()
+            if choice not in options:
+                raise ValueError("Opción inválida")
+        except ValueError as e:
+            console.print(f"[bold red]{str(e)}, por favor intente de nuevo.[/]")
+            #log_prueba
+            log_event(str(e))
     return choice
 
-def display_and_save_graph(G):
-    pos = nx.spring_layout(G)  # Posicionamiento de los nodos
-    plt.figure(figsize=(10, 8))
-    nx.draw(G, pos, with_labels=True, node_color='lightgreen', edge_color='gray', node_size=1000, font_size=12)
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
-        plt.savefig(temp.name, dpi=300)  # Aumentar DPI para una imagen más clara
-        temp_image_name = temp.name
-
-    img = Image.open(temp_image_name)
-    img.show()  # Usar un visor de imágenes externo para mejor calidad
-    os.remove(temp_image_name)  # Eliminar el archivo temporal
+def display_and_save_graph(G, topology_type):
+    try:
+        pos = nx.spring_layout(G)  # Posicionamiento de los nodos
+        plt.figure(figsize=(10, 8))
+        nx.draw(G, pos, with_labels=True, node_color='lightgreen', edge_color='gray', node_size=1000, font_size=12)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
+            plt.savefig(temp.name, dpi=300)
+            temp_image_name = temp.name
+        img = Image.open(temp_image_name)
+        img.show()
+        os.remove(temp_image_name)
+        log_event(f"Topología {topology_type} creada y mostrada con éxito.")
+    except Exception as e:
+        console.print(f"[bold red]Error al crear o mostrar la topología: {str(e)}[/]")
+        log_event(f"Error al crear o mostrar la topología: {str(e)}")
 
 def create_linear_topology():
     console.print("[bold green]Creando una topología lineal[/]")
-
-    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-    if num_vms < 2:
-        console.print("[bold red]Debe haber al menos dos VMs para formar una topología lineal.[/]")
+    log_event("Inicio creación de topología lineal.")
+    try:
+        num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+        if num_vms < 2:
+            raise ValueError("Debe haber al menos dos VMs para formar una topología lineal.")
+        G = nx.path_graph(num_vms)
+        display_and_save_graph(G, "lineal")
+    except ValueError as e:
+        console.print(f"[bold red]{str(e)}[/]")
+        log_event(str(e))
         return
 
-    G = nx.path_graph(num_vms)
-    display_and_save_graph(G)
-
     while True:
-        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-        if add_more == 'n':
+        try:
+            add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+            if add_more == 'n':
+                break
+            num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+            last_vm_id = max(G.nodes)
+            for i in range(1, num_new_vms + 1):
+                new_vm_id = last_vm_id + i
+                G.add_node(new_vm_id)
+                G.add_edge(new_vm_id - 1, new_vm_id)
+            display_and_save_graph(G, "lineal")
+        except Exception as e:
+            console.print(f"[bold red]Error durante la adición de VMs: {str(e)}[/]")
+            log_event(f"Error durante la adición de VMs: {str(e)}")
             break
 
-        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-        last_vm_id = max(G.nodes)
-        for i in range(1, num_new_vms + 1):
-            new_vm_id = last_vm_id + i
-            target_vm_id = int(console.input(f"Seleccione hacia qué ID de VM existente desea enlazar la nueva VM {new_vm_id}: "))
-            if target_vm_id in G.nodes:
-                G.add_edge(new_vm_id, target_vm_id)
-            else:
-                console.print("[bold red]ID de VM inválido, por favor intente de nuevo.[/]")
-                i -= 1  # decrement to retry this iteration
-        display_and_save_graph(G)
-
-    console.print(f"[bold green]Topología lineal finalizada con {len(G.nodes)} VMs.[/]")
+    console.print(f"[bold green]Topología lineal finalizada con {len(G.nodes())} VMs.[/]")
+    log_event("Topología lineal completada.")
 
 def create_ring_topology():
     console.print("[bold green]Creando una topología en anillo[/]")

@@ -1,0 +1,11 @@
+2024-05-11 17:26:04.333724: Inicio creación de topología lineal.
+2024-05-11 17:29:37: Inicio creación de topología lineal.
+2024-05-11 17:29:40: Topología lineal creada y mostrada con éxito.
+2024-05-11 17:29:51: Topología lineal creada y mostrada con éxito.
+2024-05-11 17:30:00: Topología lineal creada y mostrada con éxito.
+2024-05-11 17:30:35: Topología lineal completada.
+2024-05-11 17:33:03: Inicio creación de topología lineal.
+2024-05-11 17:33:05: Debe haber al menos dos VMs para formar una topología lineal.
+2024-05-11 17:33:13: Inicio creación de topología lineal.
+2024-05-11 19:47:19: Topología lineal creada y mostrada con éxito.
+2024-05-11 19:47:23: Topología lineal completada.
