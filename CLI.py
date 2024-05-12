@@ -286,54 +286,77 @@ def create_linear_topology():
 def create_bus_topology():
     console.print("[bold green]Creando una topología tipo bus[/]")
 
-    num_vms = int(console.input("Ingrese el número de VMs: "))
+    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
     if num_vms < 2:
         console.print("[bold red]Debe haber al menos dos VMs para formar una topología tipo bus.[/]")
         return
 
-    G = nx.Graph()  # Crea un grafo vacío para la topología de bus
-    G.add_nodes_from(range(num_vms))  # Agrega nodos para las VMs
+    G = nx.Graph()
+    G.add_nodes_from(range(num_vms))
 
-    # Generar nodos
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-
-    # Preguntar al usuario sobre la conexión a internet
+    nodes = [{'name': f'node{i}', 'id': i} for i in range(num_vms)]
     internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-
-    # Generar enlaces de red: conecta todos los nodos a un nodo central que representa el bus
-    bus_node = num_vms  # ID del nodo del bus (un número mayor que el ID de cualquier VM)
+    bus_node = num_vms
     network_links = [{'source': i, 'target': bus_node} for i in range(num_vms)]
 
-    # Mostrar la topología
-    display_topology(G, topology_type="Bus", bus_node=bus_node)  # Indicamos que es una topología de bus
+    display_topology(G, topology_type="Bus", bus_node=bus_node)
+
+    while True:
+        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+        if add_more == 'n':
+            break
+
+        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+        last_vm_id = len(G.nodes) - 1 # Último ID de VM
+        for i in range(1, num_new_vms + 1):
+            new_vm_id = last_vm_id + i
+            G.add_node(new_vm_id)
+            nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
+            network_links.append({'source': new_vm_id, 'target': bus_node})
+
+        display_topology(G, topology_type="Bus", bus_node=bus_node)
 
     console.print(f"[bold green]Topología tipo bus finalizada con {len(G.nodes) - 1} VMs.[/]")
     return nodes, internet_access, network_links
 
 
 def display_topology(G, topology_type="General", bus_node=None):
-    # Configura el layout según el tipo de topología
+    plt.figure(figsize=(12, 4))  # Ajusta el tamaño de la figura 
+
     if topology_type == "Bus":
-        pos = {node: (node, 0) for node in G.nodes() if node != bus_node}  # Posicionamiento lineal para VMs en el bus
+        # Calcula las posiciones de los nodos
+        num_nodes = len(G.nodes()) - 1  # Excluye el nodo del bus
+        spacing = 12 / num_nodes  # Espacio entre nodos
+        pos = {node: (i * spacing, 0) for i, node in enumerate(G.nodes()) if node != bus_node}
         if bus_node is not None:
-            pos[bus_node] = ((max(pos.keys()) + min(pos.keys())) / 2, -0.2)  # Posicionamiento del nodo del bus
-    else:
-        pos = nx.spring_layout(G)  # Layout por defecto para otros tipos
+            pos[bus_node] = (num_nodes // 2 * spacing, -0.1) # Ajusta la posición del bus
 
-    plt.figure(figsize=(12, 8))
-    
-    # Dibuja los nodos y las etiquetas
-    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=800)
-    nx.draw_networkx_labels(G, pos, font_size=12, font_color='black')
+        # Dibuja los nodos
+        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=800)
 
-    # Dibuja las conexiones
-    if topology_type == "Bus" and bus_node is not None:
+        # Dibuja los nombres de los nodos
+        labels = {node: f'node{node}' for node in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels, font_size=12, font_color='black', verticalalignment='bottom')
+
+        # Dibuja las conexiones verticales al bus
         for node in G.nodes():
             if node != bus_node:
                 plt.plot([pos[node][0], pos[bus_node][0]], [pos[node][1], pos[bus_node][1]], 'k-', lw=2)
-        plt.plot([min(pos.values())[0], max(pos.values())[0]], [pos[bus_node][1], pos[bus_node][1]], 'k-', lw=2) # Línea del bus
+
+        # Dibuja la línea del bus
+        plt.plot([min(pos.values())[0], max(pos.values())[0]], [pos[bus_node][1], pos[bus_node][1]], 'k-', lw=2)
+
     else:
-        nx.draw_networkx_edges(G, pos, edge_color='gray')
+        pos = nx.spring_layout(G)
+        nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
+        if topology_type == "Árbol":
+            plt.title('Topología de Árbol')
+        elif topology_type == "Lineal":
+            plt.title('Topología Lineal')
+
+    plt.grid(False)
+    plt.axis('off')
+    plt.tight_layout()
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
         plt.savefig(temp.name, dpi=300)
@@ -343,7 +366,6 @@ def display_topology(G, topology_type="General", bus_node=None):
     img.save(temp_image_name)
 
     os.system(f'viu {temp_image_name}')
-
     os.remove(temp_image_name)
 
 
