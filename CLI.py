@@ -297,7 +297,10 @@ def slice_management():
     while True:
         options = {
             '1': "Crear Slice",
-            '2': "Regresar al Menú Principal"
+            '2': "Listar Slices",
+            '3': "Mostrar JSON de Slice",
+            '4': "Mostrar Topologia",
+            '5': "Regresar al Menú Principal" 
         }
         display_menu("Gestión de Slices", options)
         choice = prompt_for_choice(options)
@@ -403,9 +406,86 @@ def slice_management():
             cursor.close()
             cnx.close()
 
-        elif choice == '2':
-            break
+        elif choice == '2': # Listar Slices
+            cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+            cursor = cnx.cursor()
+            query = ("SELECT JSON FROM SLICE WHERE username = %s")
+            cursor.execute(query, (username,))
+            slices = cursor.fetchall()
+            
+            table = Table(title="Slices del Usuario", show_header=True, header_style="bold magenta")
+            table.add_column("Nombre", style="dim", width=12)
+            table.add_column("Tipo", style="dim")
+            table.add_column("Nodos", justify="right")
+            table.add_column("Internet", justify="center")
 
+            for slice in slices:
+                slice_data = json.loads(slice[0])
+                for data in slice_data:
+                    if data is not None:
+                        table.add_row(
+                            data['slice_name'],
+                            data['topology_type'],
+                            str(len(data['nodes'])),
+                            "Sí" if data['internet_access'] else "No"
+                        )
+
+            console.print(table)
+            cursor.close()
+            cnx.close()
+
+        elif choice == '3': # Mostrar JSON de Slice
+            slice_name = console.input("Nombre del Slice: ")
+            cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+            cursor = cnx.cursor()
+            query = ("SELECT JSON FROM SLICE WHERE username = %s")
+            cursor.execute(query, (username,))
+            slices = cursor.fetchall()
+
+            for slice in slices:
+                slice_data = json.loads(slice[0])
+                for data in slice_data:
+                    if data is not None and data['slice_name'] == slice_name:
+                        console.print(json.dumps(data, indent=4))
+                        
+            cursor.close()
+            cnx.close()
+
+        elif choice == '4': # Mostrar Topología
+            slice_name = console.input("Nombre del Slice: ")
+            cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+            cursor = cnx.cursor()
+            query = ("SELECT JSON FROM SLICE WHERE username = %s")
+            cursor.execute(query, (username,))
+            slices = cursor.fetchall()
+
+            for slice in slices:
+                slice_data = json.loads(slice[0])
+                for data in slice_data:
+                    if data is not None and data['slice_name'] == slice_name:
+                        if data['topology_type'] == 'Árbol':
+                            G = nx.balanced_tree(r=data['num_branches'], h=data['num_levels'])
+                        elif data['topology_type'] == 'Lineal':
+                            G = nx.path_graph(len(data['nodes']))
+                            for link in data['network_links']:
+                                G.add_edge(link['source'], link['target'])
+                        else:
+                            console.print("[bold red]Tipo de topología no reconocido.[/]")
+                            continue
+
+                        display_topology(G)  # Asumiendo que tienes una función display_topology
+                        
+            cursor.close()
+            cnx.close()
+        
+        elif choice == '5':
+            break
 
 # ... (El resto de tu código se mantiene igual)
 
