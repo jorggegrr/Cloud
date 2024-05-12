@@ -32,18 +32,6 @@ def select_availability_zone():
     zone_choice = prompt_for_choice(availability_zones.keys())
     return availability_zones[zone_choice]
 
-# Zonas de disponibilidad OPENSTACK
-availability_zones_os = {
-    '1': {'name': 'worker1', 'vcpus': 4, 'ram': 16, 'disk': 100},
-    '2': {'name': 'worker2', 'vcpus': 8, 'ram': 32, 'disk': 200},
-    '3': {'name': 'worker3', 'vcpus': 16, 'ram': 64, 'disk': 400}
-}
-
-def select_availability_zone_os():
-    display_menu("Zonas de disponibilidad", {key: f"{value['name']} (vCPUs: {value['vcpus']}, RAM: {value['ram']} GB, Disco: {value['disk']} GB)" for key, value in availability_zones.items()})
-    zone_choice = prompt_for_choice(availability_zones.keys())
-    return availability_zones[zone_choice]
-
 def load_image_data():
     if os.path.exists(IMAGE_DATA_FILE):
         with open(IMAGE_DATA_FILE, 'r') as f:
@@ -91,9 +79,7 @@ def select_image():
 def select_flavor():
     flavors = {
         '1': {'name': 'm1.tiny', 'vcpus': 1, 'disk': 1, 'ram': 512},
-        '2': {'name': 'm1.small', 'vcpus': 1, 'disk': 10, 'ram': 2048},
-        '3': {'name': 'm1.medium', 'vcpus': 2, 'disk': 20, 'ram': 4096},
-        '4': {'name': 'm1.big', 'vcpus': 2, 'disk': 30 , 'ram': 8192}
+        '2': {'name': 'm1.small', 'vcpus': 1, 'disk': 20, 'ram': 2048}
     }
     display_menu("Flavors disponibles", {key: f"{value['name']} (VCPUs: {value['vcpus']}, Disk: {value['disk']} GB, RAM: {value['ram']} MB)" for key, value in flavors.items()})
     flavor_choice = prompt_for_choice(flavors.keys())
@@ -359,7 +345,7 @@ def create_mesh_topology():
     return nodes, internet_access, network_links
 
 def display_topology(G, topology_type="General", bus_node=None):
-    plt.figure(figsize=(12, 4))  # Ajusta el tamaño de la figura 
+    plt.figure(figsize=(12, 4))  # Ajusta el tamaño de la figura
 
     if topology_type == "Bus":
         # Calcula las posiciones de los nodos
@@ -555,7 +541,7 @@ def slice_management():
             else:
                 existing_slices = []  # Inicializamos existing_slices como una lista vacía si el archivo no existe o está vacío
             existing_slices.append(slice_info)
-            
+
             # Almacenar el JSON en la base de datos
             cnx = mariadb.connect(user='root', password='Cisco12345',
                                   host='127.0.0.1',
@@ -590,7 +576,7 @@ def slice_management():
             query = ("SELECT JSON FROM SLICE WHERE username = %s")
             cursor.execute(query, (username,))
             slices = cursor.fetchall()
-            
+
             table = Table(title="Slices del Usuario", show_header=True, header_style="bold magenta")
             table.add_column("Nombre", style="dim", width=12)
             table.add_column("Tipo", style="dim")
@@ -627,7 +613,7 @@ def slice_management():
                 for data in slice_data:
                     if data is not None and data['slice_name'] == slice_name:
                         console.print(json.dumps(data, indent=4))
-                        
+
             cursor.close()
             cnx.close()
 
@@ -671,7 +657,7 @@ def slice_management():
                             continue
 
                         display_topology(G, data['topology_type'], bus_node=bus_node)  # Pasar el tipo de topología
-                        
+
             cursor.close()
             cnx.close()
         elif choice == '5':
@@ -698,7 +684,9 @@ def user_management():
 @click.command()
 def main():
     global username
-    username,role = login()
+    console.print("[bold green]¡Bienvenido al Sistema de Gestión de Slices![/]")
+    console.print("[bold green]Por favor, ingrese sus datos.[/]")
+    username, role = login()
     while True:
         choice = main_menu(role)
         if choice == '2':
