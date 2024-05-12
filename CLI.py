@@ -11,14 +11,14 @@ import uuid
 import asciinet
 from PIL import Image
 import tempfile
-
+import datetime
 
 
 IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
 JSON_FILE = '/home/ubuntu/slice_info.json'
 
-
+username=None
 
 # Zonas de disponibilidad
 availability_zones = {
@@ -107,6 +107,7 @@ def prompt_for_choice(options):
     return choice
 
 def login():
+    global username
     cnx = mariadb.connect(user='root', password='Cisco12345',
                                   host='127.0.0.1',
                                   database='mydb')
@@ -120,7 +121,7 @@ def login():
         user = cursor.fetchone()
         if user is not None:
             console.print("[bold green]Inicio de sesión exitoso.[/]")
-            return user[2]
+            return user[0], user[2]
         else:
             console.print("[bold red]Usuario o contraseña incorrectos, por favor intente de nuevo.[/]")
     cursor.close()
@@ -234,8 +235,10 @@ def tree_topology():
 
     console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
 
-    return nodes, internet_access, network_links
+    return nodes, internet_access, network_links, num_branches, num_levels
 
+
+# ... (El resto de tu código se mantiene igual)
 
 def slice_management():
     while True:
@@ -247,6 +250,26 @@ def slice_management():
         choice = prompt_for_choice(options)
         if choice == '1':
             slice_name = console.input("Nombre del Slice: ")
+            # Verificar si el nombre del slice ya existe para el usuario actual
+            cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+            cursor = cnx.cursor()
+            query = ("SELECT JSON FROM SLICE WHERE username = %s")
+            cursor.execute(query, (username,))
+            slices = cursor.fetchall()
+            for slice in slices:
+                slice_data = json.loads(slice[0])
+                for data in slice_data:
+                    if data is not None and data['slice_name'] == slice_name:
+                        console.print("[bold red]Ya existe un slice con ese nombre, por favor intente de nuevo.[/]")
+                        cursor.close()
+                        cnx.close()
+                        return
+
+
+            cursor.close()
+            cnx.close()
             architecture_options = {
                 '1': "Linux",
                 '2': "Openstack"
@@ -263,29 +286,65 @@ def slice_management():
             if template_choice == '1':
                 console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
                 console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links = tree_topology()
+                nodes, internet_access, network_links, num_branches, num_levels = tree_topology()
             # Seleccionar zona de disponibilidad
             availability_zone = select_availability_zone()
             console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
             # Generar JSON
             slice_info = {
+                'timestamp': datetime.datetime.now().isoformat(),  # Agregamos un timestamp
                 'architecture': architecture_options[architecture_choice],
                 'slice_name': slice_name,
                 'nodes': nodes,
-                'topology_type': 'Árbol' if template_choice == '1' else 'Desconocido',
+                'topology_type': 'Árbol' if template_choice == '1' else 'Otro',
                 'network_links': network_links,
                 'internet_access': internet_access,
                 'image': image_name,
                 'flavor': flavor,
-                'availability_zone': availability_zone
+                'availability_zone': availability_zone,
+                'num_branches': num_branches,  # Agregamos num_branches al JSON
+                'num_levels': num_levels  # Agregamos num_levels al JSON
             }
             # Guardar JSON en un archivo
-            with open(JSON_FILE, 'w') as f:
-                json.dump(slice_info, f, indent=4)
-            console.print(f"[bold green]Información del slice guardada en {JSON_FILE}.[/]")
+            if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:  # Verificamos si el archivo existe y no está vacío
+                with open(JSON_FILE, 'r') as f:
+                    existing_slices = json.load(f)
+                if not isinstance(existing_slices, list):
+                    existing_slices = [existing_slices]
+
+            else:
+                existing_slices = []  # Inicializamos existing_slices como una lista vacía si el archivo no existe o está vacío
+            existing_slices.append(slice_info)
+            # Almacenar el JSON en la base de datos
+            cnx = mariadb.connect(user='root', password='Cisco12345',
+                                  host='127.0.0.1',
+                                  database='mydb')
+            cursor = cnx.cursor()
+            query = ("SELECT JSON FROM SLICE WHERE username = %s")
+            cursor.execute(query, (username,))
+            result = cursor.fetchone()
+            if result is None:
+                # Si no hay datos para este usuario, insertamos la nueva lista de slices
+                slices = [slice_info]
+                query = ("UPDATE SLICE SET JSON = %s WHERE username = %s")
+                cursor.execute(query, (username, json.dumps(slices)))
+            else:
+                # Si ya hay datos para este usuario, los recuperamos y añadimos el nuevo slice
+                slices = json.loads(result[0])
+                if not isinstance(slices, list):
+                    slices = [slices]
+
+                slices.append(slice_info)
+                query = ("UPDATE SLICE SET JSON = %s WHERE username = %s")
+                cursor.execute(query, (json.dumps(slices), username))
+            cnx.commit()
+            cursor.close()
+            cnx.close()
+
         elif choice == '2':
             break
 
+# ... (El resto de tu código se mantiene igual)
 
 
 def user_management():
@@ -306,6 +365,7 @@ def user_management():
 
 @click.command()
 def main():
+    global username
     role = login()
     while True:
         choice = main_menu(role)
