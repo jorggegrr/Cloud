@@ -334,18 +334,54 @@ def tree_topology(username, role):
         num_branches = int(console.input("Ingrese el número de ramas: "))
         num_levels = int(console.input("Ingrese el número de niveles: "))
 
-        if num_branches < 1 or num_levels < 1 or (num_branches == 2 and num_levels == 2):
+        if num_branches < 1 or num_levels < 1:
             raise ValueError("Parámetros inválidos para la topología de árbol.")
         
         G = nx.balanced_tree(r=num_branches, h=num_levels)
         nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
         internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
         network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-        display_topology(G, username, role)  
+        display_topology(G, username, role, "Árbol")
 
         log_event(username, role, f"Topología de árbol creada con éxito con {num_branches} ramas y {num_levels} niveles.")
         console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
+
+        # Preguntar si se desea añadir más nodos
+        while True:
+            add_more = console.input("¿Deseas añadir más nodos? (s/n): ").lower().strip()
+            if add_more == 'n':
+                break
+            elif add_more == 's':
+                new_node_name = console.input("Ingrese el nombre del nuevo nodo: ")
+                new_node_id = len(nodes)
+                nodes.append({'name': new_node_name, 'id': new_node_id})
+                G.add_node(new_node_id)
+
+                # Mostrar los nodos existentes para elegir a cuál conectar
+                console.print("Nodos existentes para conectar:")
+                for node in nodes[:-1]:  # Excluye el nodo recién creado
+                    console.print(f"{node['id']}: {node['name']}")
+
+                while True:
+                    try:
+                        target_node_id = int(console.input("Seleccione el ID del nodo al cual conectar el nuevo nodo: "))
+                        if target_node_id in [node['id'] for node in nodes if node['id'] != new_node_id]:
+                            break
+                        else:
+                            console.print("[bold red]ID de nodo inválido, intente de nuevo.[/]")
+                    except ValueError:
+                        console.print("[bold red]Entrada inválida, intente de nuevo con un número entero.[/]")
+
+                # Añadir la conexión en el grafo
+                G.add_edge(new_node_id, target_node_id)
+                network_links.append({'source': new_node_id, 'target': target_node_id})
+                display_topology(G, username, role, "Árbol")
+
+            else:
+                console.print("[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]")
+
         return nodes, internet_access, network_links, num_branches, num_levels
+
     except ValueError as e:
         console.print(f"[bold red]{str(e)}[/]")
         log_event(username, role, str(e))
