@@ -14,6 +14,7 @@ import tempfile
 import datetime
 import logging
 from datetime import datetime
+import pytz
 
 # Incio logging- jlgr
 def log_event(username, role, message):
@@ -22,14 +23,37 @@ def log_event(username, role, message):
     # Asegúrate de que el directorio exista
     if not os.path.exists(base_path):
         os.makedirs(base_path)
-    
+
     # Define el nombre del archivo de log basado en la fecha actual
     log_filename = os.path.join(base_path, f"LOG_{datetime.now().strftime('%d%m%Y')}.txt")
-    
+
     # Escribe el evento en el archivo de log
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(log_filename, 'a') as log_file:
         log_file.write(f"{current_time}, {username}, {role}, {message}\n")
+
+    # Guardar log en la base de datos
+    try:
+        # Conexión a MariaDB
+        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cursor = cnx.cursor()
+
+        # Obtener la zona horaria local
+        local_tz = pytz.timezone('America/Lima') 
+
+        # Convertir la fecha y hora a la zona horaria local
+        timestamp = datetime.now(pytz.utc).astimezone(local_tz)  
+
+        # Insertar datos en la tabla logs
+        query = "INSERT INTO logs (timestamp, username, role, message) VALUES (%s, %s, %s, %s)"
+        cursor.execute(query, (timestamp, username, role, message))
+
+        cnx.commit()
+    except mariadb.Error as e:
+        console.print(f"[bold red]Error al guardar el log en la base de datos: {e}[/]")
+    finally:
+        cursor.close()
+        cnx.close()
 
 IMAGE_DIR = '/home/ubuntu/imagenes'
 IMAGE_DATA_FILE = os.path.join(IMAGE_DIR, 'image_data.json')
@@ -43,12 +67,7 @@ availability_zones = {
     '2': {'name': 'worker2', 'vcpus': 8, 'ram': 32, 'disk': 200},
     '3': {'name': 'worker3', 'vcpus': 16, 'ram': 64, 'disk': 400}
 }
-""""
-def select_availability_zone():
-    display_menu("Zonas de disponibilidad", {key: f"{value['name']} (vCPUs: {value['vcpus']}, RAM: {value['ram']} GB, Disco: {value['disk']} GB)" for key, value in availability_zones.items()})
-    zone_choice = prompt_for_choice(availability_zones.keys())
-    return availability_zones[zone_choice]
-"""
+
 def select_availability_zone(username, role):
     try:
         display_menu("Zonas de disponibilidad", {key: f"{value['name']} (vCPUs: {value['vcpus']}, RAM: {value['ram']} GB, Disco: {value['disk']} GB)" for key, value in availability_zones.items()}, username, role)  # Pasa username y role aquí
@@ -58,14 +77,7 @@ def select_availability_zone(username, role):
     except Exception as e:
         log_event(username, role, f"Error seleccionando zona de disponibilidad: {str(e)}")
         console.print("[bold red]Error al seleccionar zona de disponibilidad.[/]")
-"""
-def load_image_data():
-    if os.path.exists(IMAGE_DATA_FILE):
-        with open(IMAGE_DATA_FILE, 'r') as f:
-            return json.load(f)
-    else:
-        return {}
-"""
+
 def load_image_data(username, role):
     try:
         if os.path.exists(IMAGE_DATA_FILE):
@@ -78,11 +90,6 @@ def load_image_data(username, role):
         log_event(username, role, f"Error cargando datos de imagen: {str(e)}")
         console.print("[bold red]Error al cargar datos de imagen.[/]")
 
-"""
-def save_image_data(data):
-    with open(IMAGE_DATA_FILE, 'w') as f:
-        json.dump(data, f)
-"""
 def save_image_data(data, username, role):
     try:
         with open(IMAGE_DATA_FILE, 'w') as f:
@@ -91,39 +98,17 @@ def save_image_data(data, username, role):
     except Exception as e:
         log_event(username, role, f"Error al guardar datos de imagen: {str(e)}")
         console.print("[bold red]Error al guardar datos de imagen.[/]")
-"""
-def list_images():
-    data = load_image_data()
-    for id, info in data.items():
-        console.print(f"Nombre: {info['filename']},ID: {id}, Tamaño: {info['size']}")
-"""
+
 def list_images(username, role):
     try:
         data = load_image_data(username, role)
         for id, info in data.items():
-            console.print(f"Nombre: {info['filename']}, ID: {id}, Tamaño: {info['size']}")
+            console.print(f"Nombre: {info['filename']}, ID: {id}, Tamaño: {info['size']} MB")
         log_event(username, role, "Listado de imágenes mostrado correctamente")
     except Exception as e:
         log_event(username, role, f"Error al listar imágenes: {str(e)}")
         console.print("[bold red]Error al listar imágenes.[/]")
 
-"""
-def upload_image():
-    uploaded_images = load_image_data()
-    files = os.listdir(IMAGE_DIR)
-    available_files = [f for f in files if f not in uploaded_images.values()]
-    console.print("Imágenes disponibles para subir:")
-    for i, filename in enumerate(available_files, start=1):
-        console.print(f"{i}. {filename}")
-    file_index = int(console.input("Seleccione el número de la imagen a subir: ")) - 1
-    filename = available_files[file_index]
-    id = str(uuid.uuid4())
-    filepath = os.path.join(IMAGE_DIR, filename)
-    size = os.path.getsize(filepath)
-    uploaded_images[id] = {'filename': filename, 'size': size}
-    save_image_data(uploaded_images)
-    console.print(f"[bold green]Imagen {filename} subida con éxito con el ID {id}.[/]")
-"""
 def upload_image(username, role):
     try:
         uploaded_images = load_image_data(username, role)
@@ -135,10 +120,16 @@ def upload_image(username, role):
 
         file_index = int(console.input("Seleccione el número de la imagen a subir: ")) - 1
         filename = available_files[file_index]
-        id = str(uuid.uuid4())
+        id = uuid.uuid4().bytes
+        id = hashlib.sha256(id).hexdigest()[:8]
+
         filepath = os.path.join(IMAGE_DIR, filename)
         size = os.path.getsize(filepath)
-        uploaded_images[id] = {'filename': filename, 'size': size}
+        
+        # Convertir a MB
+        size_mb = size / (1024 * 1024) 
+
+        uploaded_images[id] = {'filename': filename, 'size': size_mb}
         save_image_data(uploaded_images, username, role)
         console.print(f"[bold green]Imagen {filename} subida con éxito con el ID {id}.[/]")
         log_event(username, role, f"Imagen {filename} subida exitosamente con ID {id}")
@@ -147,17 +138,7 @@ def upload_image(username, role):
         console.print(f"[bold red]Error al subir imagen: {str(e)}[/]")
 
 console = Console()
-"""
-def select_image():
-    list_images()
-    image_id = console.input("Ingrese el ID de la imagen a utilizar: ")
-    data = load_image_data()
-    if image_id in data:
-        return data[image_id]['filename']
-    else:
-        console.print("[bold red]ID de imagen inválido, por favor intente de nuevo.[/]")
-        return select_image()
-"""
+
 def select_image(username, role):
     try:
         list_images(username, role)
@@ -174,16 +155,7 @@ def select_image(username, role):
         return select_image(username, role)
 
 
-"""
-def select_flavor():
-    flavors = {
-        '1': {'name': 'm1.tiny', 'vcpus': 1, 'disk': 1, 'ram': 512},
-        '2': {'name': 'm1.small', 'vcpus': 1, 'disk': 20, 'ram': 2048}
-    }
-    display_menu("Flavors disponibles", {key: f"{value['name']} (VCPUs: {value['vcpus']}, Disk: {value['disk']} GB, RAM: {value['ram']} MB)" for key, value in flavors.items()})
-    flavor_choice = prompt_for_choice(flavors.keys())
-    return flavors[flavor_choice]
-"""
+
 def select_flavor(username, role):
     try:
         flavors = {
@@ -225,28 +197,6 @@ def prompt_for_choice(options, username, role):
             break
     return choice
 
-"""
-def login():
-    global username
-    cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-    cursor = cnx.cursor()
-    while True:
-        username = console.input("Usuario: ")
-        password = console.input("Contraseña: ", password=True)
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        query = ("SELECT username, password, rol FROM usuario WHERE username = %s AND password = %s")
-        cursor.execute(query, (username, password_hash))
-        user = cursor.fetchone()
-        if user is not None:
-            console.print("[bold green]Inicio de sesión exitoso.[/]")
-            return user[0], user[2]
-        else:
-            console.print("[bold red]Usuario o contraseña incorrectos, por favor intente de nuevo.[/]")
-    cursor.close()
-    cnx.close()
-"""
 def login():
     try:
         cnx = mariadb.connect(user='root', password='Cisco12345',
@@ -274,18 +224,6 @@ def login():
         cursor.close()
         cnx.close()
 
-"""
-def main_menu(role):
-    options = {
-        '1': "Gestión de Slices",
-        '2': "Salir"
-    }
-    if role == 'admin':
-        options['3'] = "Gestión de Usuarios"
-        options['4'] = "Administrar imágenes"
-    display_menu("Menú Principal", options)
-    return prompt_for_choice(options)
-"""
 def main_menu(role, username):
     try:
         options = {
@@ -294,7 +232,10 @@ def main_menu(role, username):
         }
         if role == 'admin':
             options['3'] = "Gestión de Usuarios"
-            options['4'] = "Administrar imágenes"
+            
+        options['4'] = "Administrar imágenes"
+        options['5'] = "Cambiar contraseña"
+
         display_menu("Menú Principal", options, username, role)
         choice = prompt_for_choice(options, username, role)
         log_event(username, role, "Accedió al menú principal")
@@ -303,47 +244,24 @@ def main_menu(role, username):
         log_event(username, role, f"Error en el menú principal: {str(e)}")
         console.print("[bold red]Error en el menú principal.[/]")
 
-"""
-def handle_choice(choice):
-    menu_functions = {
-        '1': slice_management,
-        '2': lambda: None,  # Para salir
-        '3': user_management if choice == '3' else lambda: console.print("[red]Opción no válida.[/]"),
-        '4': image_management if choice == '4' else lambda: console.print("[red]Opción no válida.[/]")
-    }
-    func = menu_functions.get(choice, lambda: console.print("[red]Opción no válida.[/]"))
-    return func()
-"""
+
 def handle_choice(choice, username, role):
     try:
         menu_functions = {
             '1': lambda: slice_management(username, role),
             '2': lambda: None,  # Para salir
             '3': lambda: user_management(username, role) if choice == '3' else lambda: console.print("[red]Opción no válida.[/]"),
-            '4': lambda: image_management(username, role) if choice == '4' else lambda: console.print("[red]Opción no válida.[/]")
+            '4': lambda: image_management(username, role) if choice == '4' else lambda: console.print("[red]Opción no válida.[/]"),
+            '5': lambda: change_password(username, role) if choice == '5' else lambda: console.print("[red]Opción no válida.[/]")
         }
         func = menu_functions.get(choice, lambda: console.print("[red]Opción no válida.[/]"))
-        return func()  # Invocar la función seleccionada pasando los argumentos necesarios
+        return func()
     except Exception as e:
         log_event(username, role, f"Error al manejar la opción {choice}: {str(e)}")
         console.print(f"[bold red]Error al manejar la opción {choice}: {str(e)}[/]")
-"""
-def image_management():
-    while True:
-        options = {
-            '1': "Listar imágenes",
-            '2': "Subir imagen",
-            '3': "Regresar al Menú Principal"
-        }
-        display_menu("Administrar imágenes", options)
-        choice = prompt_for_choice(options)
-        if choice == '1':
-            list_images()
-        elif choice == '2':
-            upload_image()
-        elif choice == '3':
-            break
-"""
+
+
+
 def image_management(username, role):
     try:
         while True:
@@ -364,25 +282,7 @@ def image_management(username, role):
     except Exception as e:
         log_event(username, role, f"Error en la gestión de imágenes: {str(e)}")
         console.print(f"[bold red]Error en la gestión de imágenes: {str(e)}[/]")
-"""
-def create_user():
-    cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-    cursor = cnx.cursor()
-    username = console.input("Nombre de usuario: ")
-    password = console.input("Contraseña: ", password=True)
-    rol_option = console.input("Rol (1 para 'admin', 2 para 'usuario'): ")
-    rol = 'admin' if rol_option == '1' else 'usuario'
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    token = '4b9efd8df8de6f1f0ce461ef5ff19b5f3294776beffb8f1b16ef9f9df6a2b6f2'
-    query = ("INSERT INTO usuario (username, password, rol, token) VALUES (%s, %s, %s, %s)")
-    cursor.execute(query, (username, password_hash, rol, token))
-    cnx.commit()
-    console.print(f"[bold green]Usuario {username} creado con éxito.[/]")
-    cursor.close()
-    cnx.close()
-"""
+
 def create_user(username, role):
     try:
         cnx = mariadb.connect(user='root', password='Cisco12345',
@@ -407,20 +307,7 @@ def create_user(username, role):
         cursor.close()
         cnx.close()
 
-"""
-def list_users():
-    cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-    cursor = cnx.cursor()
-    query = ("SELECT username, rol FROM usuario")
-    cursor.execute(query)
-    users = cursor.fetchall()
-    for user in users:
-        console.print(f"Nombre de usuario: {user[0]}, Rol: {user[1]}")
-    cursor.close()
-    cnx.close()
-"""
+
 def list_users(username, role):
     try:
         cnx = mariadb.connect(user='root', password='Cisco12345',
@@ -441,36 +328,6 @@ def list_users(username, role):
         cnx.close()
 
 
-
-"""
-def tree_topology():
-    console.print("[bold green]Creando una topología tipo árbol[/]")
-
-    num_branches = int(console.input("Ingrese el número de ramas: "))
-    num_levels = int(console.input("Ingrese el número de niveles: "))
-
-    if num_branches < 1 or num_levels < 1 or (num_branches == 2 and num_levels == 2):
-        console.print("[bold red]Parámetros inválidos, intente de nuevo.[/]")
-        return
-
-    G = nx.balanced_tree(r=num_branches, h=num_levels)
-
-    # Generar nodos
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-
-    # Preguntar al usuario sobre la conexión a internet
-    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-
-    # Generar enlaces de red ficticios
-    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-
-    # Mostrar y guardar la topologia
-    display_topology(G)
-
-    console.print(f"[bold green]Topología tipo árbol creada con {num_branches} ramas y {num_levels} niveles.[/]")
-
-    return nodes, internet_access, network_links, num_branches, num_levels
-"""
 def tree_topology(username, role):
     log_event(username, role, "Inicio creación de topología tipo árbol.")
     try:
@@ -497,54 +354,7 @@ def tree_topology(username, role):
         log_event(username, role, f"Error inesperado al crear topología de árbol: {str(e)}")
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
 
-"""
-def create_linear_topology():
-    console.print("[bold green]Creando una topología lineal[/]")
 
-    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-    if num_vms < 2:
-        console.print("[bold red]Debe haber al menos dos VMs para formar una topología lineal.[/]")
-        return
-
-    G = nx.path_graph(num_vms)
-
-    # Generar nodos
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-
-    # Preguntar al usuario sobre la conexión a internet
-    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-
-    # Generar enlaces de red
-    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-
-    # Mostrar la topología inicial
-    display_topology(G)
-
-    while True:
-        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-        if add_more == 'n':
-            break
-
-        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-        last_vm_id = max(G.nodes)
-        for i in range(1, num_new_vms + 1):
-            new_vm_id = last_vm_id + i
-            target_vm_id = int(console.input(f"Seleccione hacia qué ID de VM existente desea enlazar la nueva VM {new_vm_id}: "))
-            if target_vm_id in G.nodes:
-                G.add_edge(new_vm_id, target_vm_id)
-                nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
-                network_links.append({'source': new_vm_id, 'target': target_vm_id})
-            else:
-                console.print("[bold red]ID de VM inválido, por favor intente de nuevo.[/]")
-                i -= 1
-
-        # Mostrar la topología actualizada
-        display_topology(G)
-
-    console.print(f"[bold green]Topología lineal finalizada con {len(G.nodes)} VMs.[/]")
-
-    return nodes, internet_access, network_links
-"""
 def create_linear_topology(username, role):
     log_event(username, role, "Inicio creación de topología lineal.")
     try:
@@ -567,14 +377,32 @@ def create_linear_topology(username, role):
 
                 for i in range(num_new_vms):
                     new_vm_id = len(nodes)
-                    target_vm_id = int(console.input(f"Ingrese el ID de la VM a la que desea conectar la nueva VM {new_vm_id}: "))
-                    if 0 <= target_vm_id < len(nodes):  # Verifica si el ID de la VM objetivo es válido
-                        G.add_edge(new_vm_id, target_vm_id)
-                        nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
-                        display_topology(G, username, role, "Lineal")
+                    while True:
+                        try:
+                            target_vm_id = int(console.input(f"Ingrese el ID de la VM a la que desea conectar la nueva VM {new_vm_id}: "))
+                            # Validar que solo se conecte a los extremos
+                            if target_vm_id == 0 or target_vm_id == len(nodes) - 1:
+                                break
+                            else:
+                                console.print(f"[bold red]ID de VM inválido. Debe ser 0 o {len(nodes) - 1} para mantener la topología lineal.[/]")
+                        except ValueError:
+                            console.print(f"[bold red]Entrada inválida. Ingrese un número entero.[/]")
+
+                    # Encontrar la posición del nodo objetivo en la lista de nodos
+                    target_position = next((index for (index, d) in enumerate(nodes) if d["id"] == target_vm_id), None)
+
+                    # Insertar la nueva VM en la lista de nodos (al principio o al final)
+                    if target_vm_id == 0:
+                        nodes.insert(0, {'name': f'node{new_vm_id}', 'id': new_vm_id})
                     else:
-                        console.print(f"[bold red]ID de VM inválido. Debe estar entre 0 y {len(nodes) - 1}.[/]")
-                        i -= 1  # Reintentar la inserción de esta VM
+                        nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
+
+                    # Reconstruir el grafo con la nueva VM
+                    G = nx.Graph()
+                    G.add_nodes_from([node['id'] for node in nodes])
+                    for j in range(len(nodes) - 1):
+                        G.add_edge(nodes[j]['id'], nodes[j + 1]['id'])
+                    display_topology(G, username, role, "Lineal")
 
             else:
                 console.print("[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]")
@@ -590,144 +418,162 @@ def create_linear_topology(username, role):
     except Exception as e:
         log_event(username, role, f"Error inesperado al crear topología lineal: {str(e)}")
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
-"""
-def create_bus_topology():
-    console.print("[bold green]Creando una topología tipo bus[/]")
 
-    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-    if num_vms < 2:
-        console.print("[bold red]Debe haber al menos dos VMs para formar una topología tipo bus.[/]")
-        return
-
-    G = nx.Graph()
-    G.add_nodes_from(range(num_vms))
-
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(num_vms)]
-    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-    bus_node = num_vms
-    network_links = [{'source': i, 'target': bus_node} for i in range(num_vms)]
-
-    display_topology(G, topology_type="Bus", bus_node=bus_node)
-
-    while True:
-        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-        if add_more == 'n':
-            break
-
-        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-        last_vm_id = len(G.nodes) - 1 # Último ID de VM
-        for i in range(1, num_new_vms + 1):
-            new_vm_id = last_vm_id + i
-            G.add_node(new_vm_id)
-            nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
-            network_links.append({'source': new_vm_id, 'target': bus_node})
-
-        display_topology(G, topology_type="Bus", bus_node=bus_node)
-
-    console.print(f"[bold green]Topología tipo bus finalizada con {len(G.nodes) - 1} VMs.[/]")
-    return nodes, internet_access, network_links
-"""
 def create_bus_topology(username, role):
     log_event(username, role, "Inicio creación de topología tipo bus.")
     try:
         console.print("[bold green]Creando una topología tipo bus[/]")
         num_vms = int(console.input("Ingrese el número inicial de VMs: "))
         if num_vms < 2:
-            raise ValueError("Debe haber al menos dos VMs para formar una topología tipo bus.")
+            raise ValueError(
+                "Debe haber al menos dos VMs para formar una topología tipo bus."
+            )
 
-        G = nx.path_graph(num_vms)
-        internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-        display_topology(G, username, role)  
+        # Crear un grafo vacío para la topología de bus
+        G = nx.Graph()
+        G.add_nodes_from(range(num_vms))  # Añadir nodos para las VMs
+
+        nodes = [{'name': f'node{i}', 'id': i} for i in range(num_vms)]
+        internet_access = (
+            console.input("¿El slice tiene salida a internet? (s/n): ").lower() == "s"
+        )
+
+        # El nodo del bus es un nodo adicional al final
+        bus_node = num_vms
+        G.add_node(bus_node)  # Añadir el nodo del bus
+
+        # Conectar todas las VMs al nodo del bus
+        network_links = [{'source': i, 'target': bus_node} for i in range(num_vms)]
+        G.add_edges_from([(link['source'], link['target']) for link in network_links])
+
+        display_bus_topology(G, username, role)
 
         while True:
-            add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-            if add_more == 'n':
+            add_more = (
+                console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ")
+                .lower()
+                .strip()
+            )
+            if add_more == "n":
                 break
-            num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-            last_vm_id = max(G.nodes)
-            for i in range(1, num_new_vms + 1):
-                new_vm_id = last_vm_id + i
-                G.add_edge(last_vm_id, new_vm_id)
-            display_topology(G, username, role)  
+            elif add_more == "s":
+                num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
 
-        log_event(username, role, f"Topología tipo bus completada con {len(G.nodes())} VMs.")
-        console.print(f"[bold green]Topología tipo bus finalizada con {len(G.nodes())} VMs.[/]")
+                # Añadir nuevas VMs y conectarlas al bus
+                for i in range(num_new_vms):
+                    new_vm_id = len(G.nodes)  # Nuevo ID de VM
+                    G.add_node(new_vm_id)
+                    nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
+                    network_links.append({'source': new_vm_id, 'target': bus_node})
+                    G.add_edge(new_vm_id, bus_node)
+
+                display_bus_topology(G, username, role)
+
+            else:
+                console.print(
+                    "[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]"
+                )
+
+        log_event(
+            username,
+            role,
+            f"Topología tipo bus completada con {len(G.nodes()) - 1} VMs.",
+        )
+        console.print(
+            f"[bold green]Topología tipo bus finalizada con {len(G.nodes()) - 1} VMs.[/]"
+        )
+        return nodes, internet_access, network_links
+
     except ValueError as e:
         console.print(f"[bold red]{str(e)}[/]")
         log_event(username, role, str(e))
     except Exception as e:
-        log_event(username, role, f"Error inesperado al crear topología tipo bus: {str(e)}")
+        log_event(
+            username, role, f"Error inesperado al crear topología tipo bus: {str(e)}"
+        )
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
 
-"""
-def create_mesh_topology():
-    console.print("[bold green]Creando una topología en malla[/]")
+def display_bus_topology(G, username, role):
+    try:
+        log_event(username, role, "Displaying Bus topology.")
+        plt.figure(figsize=(10, 2))  # Tamaño ajustado para mejor visualización horizontal
 
-    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-    if num_vms < 2:
-        console.print("[bold red]Debe haber al menos dos VMs para formar una topología en malla.[/]")
-        return
+        # Asumimos que el último nodo es el nodo del bus, no lo mostraremos
+        num_vms = len(G.nodes()) - 1
+        spacing = 10 / max(num_vms, 1)  # Evita división por cero si num_vms es 0
+        pos = {i: (i * spacing, 0) for i in range(num_vms)}  # Posiciones de las VMs en una línea horizontal
 
-    # Crear una topología en malla completa
-    G = nx.complete_graph(num_vms)
+        # Dibuja los nodos VMs
+        nx.draw_networkx_nodes(G, pos, nodelist=range(num_vms), node_color='lightblue', node_size=800)
+        labels = {i: f'node{i}' for i in range(num_vms)}
+        nx.draw_networkx_labels(G, pos, labels, font_size=12)
 
-    # Generar nodos
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+        # Dibuja las conexiones al bus oculto
+        bus_pos = (num_vms * spacing / 2, -0.5)  # Posición oculta del bus, fuera de la vista
+        for node in range(num_vms):
+            plt.plot([pos[node][0], bus_pos[0]], [pos[node][1], bus_pos[1]], 'k-', lw=2)
 
-    # Preguntar al usuario sobre la conexión a internet
-    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+        plt.title("Topología de Bus")
+        plt.grid(False)
+        plt.axis('off')
+        plt.tight_layout()
 
-    # Generar enlaces de red ficticios
-    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
+        # Guardar la imagen en una ubicación temporal y visualizarla con un visor externo
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
+            plt.savefig(temp.name, dpi=300)
+            temp_image_name = temp.name
 
-    # Mostrar y guardar la topologia
-    display_topology(G)
+        os.system(f'viu {temp_image_name}')
+        os.remove(temp_image_name)
 
-    while True:
-        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-        if add_more == 'n':
-            break
+        log_event(username, role, "Bus topology displayed successfully.")
+    except Exception as e:
+        log_event(username, role, f"Failed to display Bus topology: {str(e)}")
+        console.print(f"[bold red]Failed to display topology due to an error: {str(e)}[/]")
 
-        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-        last_vm_id = max(G.nodes) + 1  # Comenzamos a añadir VMs desde el siguiente ID disponible
-        total_vms = len(G.nodes) + num_new_vms
-
-        # Reconstruir la topología en malla con las VMs adicionales
-        G = nx.complete_graph(total_vms)
-
-        # Actualizar nodos y enlaces de red
-        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-
-        # Mostrar la topología actualizada
-        display_topology(G)
-
-    console.print(f"[bold green]Topología en malla finalizada con {len(G.nodes)} VMs.[/]")
-    return nodes, internet_access, network_links
-"""
 def create_mesh_topology(username, role):
     log_event(username, role, "Inicio creación de topología en malla.")
     try:
-        num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-        if num_vms < 2:
-            raise ValueError("Debe haber al menos dos VMs para formar una topología en malla.")
+        console.print("[bold green]Creando una topología en malla[/]")
+
+        while True:
+            try:
+                num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+                if num_vms < 2:
+                    raise ValueError("Debe haber al menos dos VMs para formar una topología en malla.")
+                break  # Salir del bucle si la entrada es válida
+            except ValueError as e:
+                console.print(f"[bold red]{str(e)}. Intente de nuevo.[/]")
 
         G = nx.complete_graph(num_vms)
         internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-        display_topology(G, username, role)  
+        display_topology(G, username, role, "Malla")
+
         while True:
-            add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+            add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower().strip()
             if add_more == 'n':
                 break
-            num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-            last_vm_id = max(G.nodes)
-            for i in range(1, num_new_vms + 1):
-                new_vm_id = last_vm_id + i
-                G.add_edge(last_vm_id, new_vm_id)
-            display_topology(G, username, role)  
+            elif add_more == 's':
+                while True:
+                    try:
+                        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+                        break  # Salir del bucle si la entrada es válida
+                    except ValueError:
+                        console.print(f"[bold red]Entrada inválida. Ingrese un número entero.[/]")
+                
+                # Reconstruir la malla con las VMs adicionales
+                total_vms = len(G.nodes) + num_new_vms
+                G = nx.complete_graph(total_vms)
+                display_topology(G, username, role, "Malla")
+            else:
+                console.print("[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]")
 
+        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
+        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
         log_event(username, role, f"Topología en malla completada con {len(G.nodes())} VMs.")
         console.print(f"[bold green]Topología en malla finalizada con {len(G.nodes())} VMs.[/]")
+        return nodes, internet_access, network_links
+
     except ValueError as e:
         console.print(f"[bold red]{str(e)}[/]")
         log_event(username, role, str(e))
@@ -736,58 +582,6 @@ def create_mesh_topology(username, role):
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
 
 
-"""
-def display_topology(G, topology_type="General", bus_node=None):
-    plt.figure(figsize=(12, 4))  # Ajusta el tamaño de la figura
-
-    if topology_type == "Bus":
-        # Calcula las posiciones de los nodos
-        num_nodes = len(G.nodes()) - 1  # Excluye el nodo del bus
-        spacing = 12 / num_nodes  # Espacio entre nodos
-        pos = {node: (i * spacing, 0) for i, node in enumerate(G.nodes()) if node != bus_node}
-        if bus_node is not None:
-            pos[bus_node] = (num_nodes // 2 * spacing, -0.1) # Ajusta la posición del bus
-
-        # Dibuja los nodos
-        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=800)
-
-        # Dibuja los nombres de los nodos
-        labels = {node: f'node{node}' for node in G.nodes()}
-        nx.draw_networkx_labels(G, pos, labels, font_size=12, font_color='black', verticalalignment='bottom')
-
-        # Dibuja las conexiones verticales al bus
-        for node in G.nodes():
-            if node != bus_node:
-                plt.plot([pos[node][0], pos[bus_node][0]], [pos[node][1], pos[bus_node][1]], 'k-', lw=2)
-
-        # Dibuja la línea del bus
-        plt.plot([min(pos.values())[0], max(pos.values())[0]], [pos[bus_node][1], pos[bus_node][1]], 'k-', lw=2)
-
-    else:
-        pos = nx.spring_layout(G)
-        nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=1000, font_size=16)
-        if topology_type == "Árbol":
-            plt.title('Topología de Árbol')
-        elif topology_type == "Lineal":
-            plt.title('Topología Lineal')
-        elif topology_type == "Malla":
-            plt.title('Topología de Malla')
-        elif topology_type == "Anillo":
-            plt.title('Topología de Anillo')
-
-    plt.grid(False)
-    plt.axis('off')
-    plt.tight_layout()
-
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
-        plt.savefig(temp.name, dpi=300)
-        temp_image_name = temp.name
-
-    # Mostrar la topologia en la terminal
-    os.system(f'viu {temp_image_name}')
-    os.remove(temp_image_name)
-
-"""
 
 def display_topology(G, username, role, topology_type="General", bus_node=None):
     try:
@@ -830,312 +624,139 @@ def display_topology(G, username, role, topology_type="General", bus_node=None):
     except Exception as e:
         log_event(username, role, f"Failed to display {topology_type} topology: {str(e)}")
         console.print(f"[bold red]Failed to display topology due to an error: {str(e)}[/]")
-"""
-def create_ring_topology():
-    console.print("[bold green]Creando una topología en anillo[/]")
 
-    num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-    if num_vms < 3:
-        console.print("[bold red]Debe haber al menos tres VMs para formar una topología en anillo.[/]")
-        return
-
-    G = nx.cycle_graph(num_vms)
-
-    # Generar nodos
-    nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-
-    # Preguntar al usuario sobre la conexión a internet
-    internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
-
-    # Generar enlaces de red
-    network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-
-    # Mostrar la topología inicial
-    display_topology(G)
-
-    while True:
-        add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
-        if add_more == 'n':
-            break
-
-        num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-        # Ajustamos el ID más alto actual para asegurar que no haya solapamiento
-        last_vm_id = max(G.nodes) + 1
-        total_vms = len(G.nodes) + num_new_vms
-
-        # Eliminar todas las conexiones antiguas y agregar todos los nodos de nuevo para reconstruir el anillo
-        G = nx.cycle_graph(total_vms)
-        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-        display_topology(G)
-
-    console.print(f"[bold green]Topología en anillo finalizada con {len(G.nodes)} VMs.[/]")
-    return nodes, internet_access, network_links
-"""
 def create_ring_topology(username, role):
     log_event(username, role, "Inicio creación de topología en anillo.")
     try:
-        num_vms = int(console.input("Ingrese el número inicial de VMs: "))
-        if num_vms < 3:
-            raise ValueError("Debe haber al menos tres VMs para formar una topología en anillo.")
+        console.print("[bold green]Creando una topología en anillo[/]")
+        while True:
+            try:
+                num_vms = int(console.input("Ingrese el número inicial de VMs: "))
+                if num_vms < 3:
+                    raise ValueError(
+                        "Debe haber al menos tres VMs para formar una topología en anillo."
+                    )
+                break  # Salir del bucle si la entrada es válida
+            except ValueError as e:
+                console.print(f"[bold red]{str(e)}. Intente de nuevo.[/]")
 
         G = nx.cycle_graph(num_vms)
+        nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
         internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
         display_topology(G, username, role, "Anillo")
 
         while True:
-            add_more = console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ").lower()
+            add_more = (
+                console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ")
+                .lower()
+                .strip()
+            )
             if add_more == 'n':
                 break
+            elif add_more == 's':
+                while True:
+                    try:
+                        num_new_vms = int(
+                            console.input("Ingrese el número de nuevas VMs a añadir: ")
+                        )
+                        break  # Salir del bucle si la entrada es válida
+                    except ValueError:
+                        console.print(
+                            f"[bold red]Entrada inválida. Ingrese un número entero.[/]"
+                        )
 
-            num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
-            # Ajustamos el ID más alto actual para asegurar que no haya solapamiento
-            last_vm_id = max(G.nodes) + 1
-            total_vms = len(G.nodes) + num_new_vms
+                # Reconstruir el anillo con las VMs adicionales
+                total_vms = len(G.nodes) + num_new_vms
+                G = nx.cycle_graph(total_vms)
+                nodes = [
+                    {'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))
+                ]
+                display_topology(G, username, role, "Anillo")
+            else:
+                console.print(
+                    "[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]"
+                )
 
-            # Eliminar todas las conexiones antiguas y agregar todos los nodos de nuevo para reconstruir el anillo
-            G = nx.cycle_graph(total_vms)
-            nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
-            network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
-            display_topology(G, username, role, "Anillo")
-
+        network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
         log_event(username, role, f"Topología en anillo completada con {len(G.nodes())} VMs.")
         console.print(f"[bold green]Topología en anillo finalizada con {len(G.nodes())} VMs.[/]")
+        return nodes, internet_access, network_links  # Asegurar que se devuelven los tres elementos
+
     except ValueError as e:
         console.print(f"[bold red]{str(e)}[/]")
         log_event(username, role, str(e))
     except Exception as e:
-        log_event(username, role, f"Error inesperado al crear topología en anillo: {str(e)}")
+        log_event(
+            username, role, f"Error inesperado al crear topología en anillo: {str(e)}"
+        )
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
-"""
-def slice_management():
-    while True:
-        options = {
-            '1': "Crear Slice",
-            '2': "Listar Slices",
-            '3': "Mostrar JSON de Slice",
-            '4': "Mostrar Topologia",
-            '5': "Regresar al Menú Principal"
-        }
-        display_menu("Gestión de Slices", options)
-        choice = prompt_for_choice(options)
+        
 
-        if choice == '1':
-            log_event(username, role, "Intentando crear un nuevo slice.")
-            slice_name = console.input("Nombre del Slice: ")
-            # Verificar si el nombre del slice ya existe para el usuario actual
-            cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-            cursor = cnx.cursor()
-            query = ("SELECT JSON FROM SLICE WHERE username = %s")
-            cursor.execute(query, (username,))
-            slices = cursor.fetchall()
-            for slice in slices:
-                slice_data = json.loads(slice[0])
-                for data in slice_data:
-                    if data is not None and data['slice_name'] == slice_name:
-                        console.print("[bold red]Ya existe un slice con ese nombre, por favor intente de nuevo.[/]")
-                        cursor.close()
-                        cnx.close()
-                        return
 
-            cursor.close()
-            cnx.close()
-            architecture_options = {
-                '1': "Linux",
-                '2': "Openstack"
-            }
-            display_menu("Selección de arquitectura", architecture_options)
-            architecture_choice = prompt_for_choice(architecture_options)
-            image_name = select_image()
-            flavor = select_flavor()
-            template_options = {
-                '1': "Plantilla (Árbol)",
-                '2': "Plantilla (Lineal)",
-                '3': "Plantilla (Bus)",  # Nueva opción para topología de bus
-                '4': "Plantilla (Malla)",   # Nueva opción para topología de malla
-                '5': "Plantilla (Anillo)"
-            }
-            display_menu("Plantilla", template_options)
-            template_choice = prompt_for_choice(template_options)
-            if template_choice == '1':
-                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
-                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links, num_branches, num_levels = tree_topology()
-                topology_type = 'Árbol'
-            elif template_choice == '2':
-                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
-                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links = create_linear_topology()
-                topology_type = 'Lineal'
-            elif template_choice == '3':  # Manejar la nueva opción de topología de bus
-                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
-                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links = create_bus_topology()
-                topology_type = 'Bus'
-            elif template_choice == '4': # Manejar la nueva opción de topología de malla
-                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
-                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links = create_mesh_topology()
-                topology_type = 'Malla'
-            elif template_choice == '5':
-                console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
-                console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
-                nodes, internet_access, network_links = create_ring_topology()
-                topology_type = 'Anillo'
-            # Seleccionar zona de disponibilidad
-            availability_zone = select_availability_zone()
-            console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
-            # Generar JSON
-            slice_info = {
-                'timestamp': datetime.datetime.now().isoformat(),
-                'architecture': architecture_options[architecture_choice],
-                'slice_name': slice_name,
-                'nodes': nodes,
-                'topology_type': topology_type,
-                'network_links': network_links,
-                'internet_access': internet_access,
-                'image': image_name,
-                'flavor': flavor,
-                'availability_zone': availability_zone
-            }
 
-            if topology_type == 'Árbol':
-                slice_info['num_branches'] = num_branches
-                slice_info['num_levels'] = num_levels
+def create_custom_topology(username, role):
+    log_event(username, role, "Inicio creación de topología personalizada.")
+    try:
+        console.print("[bold green]Creando una topología personalizada[/]")
+        G = nx.Graph()
+        nodes = []
+        network_links = []
 
-            if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:  # Verificamos si el archivo existe y no está vacío
-                with open(JSON_FILE, 'r') as f:
-                    existing_slices = json.load(f)
-                if not isinstance(existing_slices, list):
-                    existing_slices = [existing_slices]
+        # Agregar el primer nodo
+        node_name = console.input("Ingrese el nombre del primer nodo: ")
+        node_id = 0
+        nodes.append({'name': node_name, 'id': node_id})
+        G.add_node(node_id)
+        display_topology(G, username, role, "Personalizada")  # Mostrar la topología inicial
 
-            else:
-                existing_slices = []  # Inicializamos existing_slices como una lista vacía si el archivo no existe o está vacío
-            existing_slices.append(slice_info)
+        while True:
+            add_more = console.input("¿Deseas añadir más VMs? (s/n): ").lower().strip()
+            if add_more == 'n':
+                break
+            elif add_more == 's':
+                node_name = console.input("Ingrese el nombre del nuevo nodo: ")
+                node_id = len(nodes)
+                nodes.append({'name': node_name, 'id': node_id})
+                G.add_node(node_id)
 
-            # Almacenar el JSON en la base de datos
-            cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-            cursor = cnx.cursor()
-            query = ("SELECT JSON FROM SLICE WHERE username = %s")
-            cursor.execute(query, (username,))
-            result = cursor.fetchone()
-            if result is None:
-                # Si no hay datos para este usuario, insertamos la nueva lista de slices
-                slices = [slice_info]
-                query = ("UPDATE SLICE SET JSON = %s WHERE username = %s")
-                cursor.execute(query, (json.dumps(slices), username))
-            else:
-                # Si ya hay datos para este usuario, los recuperamos y añadimos el nuevo slice
-                slices = json.loads(result[0])
-                if not isinstance(slices, list):
-                    slices = [slices]
+                # Mostrar los nodos disponibles para conectar
+                console.print("Nodos disponibles para conectar:")
+                for i, node in enumerate(nodes[:-1]):  # Excluir el nodo recién creado
+                    console.print(f"{i}. {node['name']} (ID: {node['id']})")
 
-                slices.append(slice_info)
-                query = ("UPDATE SLICE SET JSON = %s WHERE username = %s")
-                cursor.execute(query, (json.dumps(slices), username))
-            cnx.commit()
-            cursor.close()
-            cnx.close()
+                while True:
+                    connected_to_index = console.input(
+                        f"Ingrese el índice del nodo al que se conecta '{node_name}' "
+                        f"(o 'ninguno' si no se conecta a ningún nodo existente): "
+                    ).strip()
+                    if connected_to_index.lower() == 'ninguno':
+                        break
 
-        elif choice == '2': # Listar Slices
-            cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-            cursor = cnx.cursor()
-            query = ("SELECT JSON FROM SLICE WHERE username = %s")
-            cursor.execute(query, (username,))
-            slices = cursor.fetchall()
-
-            table = Table(title="Slices del Usuario", show_header=True, header_style="bold magenta")
-            table.add_column("Nombre", style="dim", width=12)
-            table.add_column("Tipo", style="dim")
-            table.add_column("Nodos", justify="right")
-            table.add_column("Internet", justify="center")
-
-            for slice in slices:
-                slice_data = json.loads(slice[0])
-                for data in slice_data:
-                    if data is not None:
-                        table.add_row(
-                            data['slice_name'],
-                            data['topology_type'],
-                            str(len(data['nodes'])),
-                            "Sí" if data['internet_access'] else "No"
-                        )
-
-            console.print(table)
-            cursor.close()
-            cnx.close()
-
-        elif choice == '3': # Mostrar JSON de Slice
-            slice_name = console.input("Nombre del Slice: ")
-            cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-            cursor = cnx.cursor()
-            query = ("SELECT JSON FROM SLICE WHERE username = %s")
-            cursor.execute(query, (username,))
-            slices = cursor.fetchall()
-
-            for slice in slices:
-                slice_data = json.loads(slice[0])
-                for data in slice_data:
-                    if data is not None and data['slice_name'] == slice_name:
-                        console.print(json.dumps(data, indent=4))
-
-            cursor.close()
-            cnx.close()
-
-        elif choice == '4':  # Mostrar Topología
-            slice_name = console.input("Nombre del Slice: ")
-            cnx = mariadb.connect(user='root', password='Cisco12345',
-                                  host='127.0.0.1',
-                                  database='mydb')
-            cursor = cnx.cursor()
-            query = ("SELECT JSON FROM SLICE WHERE username = %s")
-            cursor.execute(query, (username,))
-            slices = cursor.fetchall()
-
-            for slice in slices:
-                slice_data = json.loads(slice[0])
-                for data in slice_data:
-                    if data is not None and data['slice_name'] == slice_name:
-                        bus_node = None # Asignar un valor predeterminado a bus_node
-                        if data['topology_type'] == 'Árbol':
-                            G = nx.balanced_tree(r=data['num_branches'], h=data['num_levels'])
-                        elif data['topology_type'] == 'Lineal':
-                            G = nx.path_graph(len(data['nodes']))
-                            for link in data['network_links']:
-                                G.add_edge(link['source'], link['target'])
-                        elif data['topology_type'] == 'Bus':  # Manejar la topología de bus
-                            G = nx.Graph()  # Crea un grafo vacío
-                            G.add_nodes_from(range(len(data['nodes'])))  # Agrega nodos para las VMs
-                            bus_node = len(data['nodes'])  # Define el ID del nodo del bus
-                            for link in data['network_links']:
-                                G.add_edge(link['source'], link['target'])  # Agrega los enlaces
-                        elif data['topology_type'] == 'Malla':
-                            G = nx.complete_graph(len(data['nodes']))
-                            for link in data['network_links']:
-                                G.add_edge(link['source'], link['target'])
-                        elif data['topology_type'] == 'Anillo':
-                            G = nx.cycle_graph(len(data['nodes']))
-                            for link in data['network_links']:
-                                G.add_edge(link['source'], link['target'])
+                    try:
+                        connected_to_index = int(connected_to_index)
+                        if 0 <= connected_to_index < len(nodes) - 1:
+                            connected_to_id = nodes[connected_to_index]['id']
+                            network_links.append({'source': node_id, 'target': connected_to_id})
+                            G.add_edge(node_id, connected_to_id)
+                            break
                         else:
-                            console.print("[bold red]Tipo de topología no reconocido.[/]")
-                            continue
+                            console.print("[bold red]Índice de nodo inválido. Intente de nuevo.[/]")
+                    except ValueError:
+                        console.print("[bold red]Entrada inválida. Intente de nuevo.[/]")
 
-                        display_topology(G, data['topology_type'], bus_node=bus_node)  # Pasar el tipo de topología
+                display_topology(G, username, role, "Personalizada")  # Mostrar la topología actualizada
 
-            cursor.close()
-            cnx.close()
-        elif choice == '5':
-            break
-"""
+            else:
+                console.print("[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]")
+
+        internet_access = console.input("¿El slice tiene salida a internet? (s/n): ").lower() == 's'
+        log_event(username, role, f"Topología personalizada completada con {len(G.nodes())} VMs.")
+        console.print(f"[bold green]Topología personalizada finalizada con {len(G.nodes())} VMs.[/]")
+        return nodes, internet_access, network_links
+    except Exception as e:
+        log_event(username, role, f"Error inesperado al crear topología personalizada: {str(e)}")
+        console.print(f"[bold red]Error inesperado: {str(e)}[/]")
+
 def slice_management(username, role):
     while True:
         options = {
@@ -1145,186 +766,8 @@ def slice_management(username, role):
             '4': "Mostrar Topología",
             '5': "Regresar al Menú Principal"
         }
-        display_menu("Gestión de Slices", options, username, role)
-        choice = prompt_for_choice(options, username, role)
-
-        if choice == '1':
-            log_event(username, role, "Intentando crear un nuevo slice.")
-            slice_name = console.input("Nombre del Slice: ")
-
-            cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
-            cursor = cnx.cursor()
-            query = "SELECT JSON FROM SLICE WHERE username = %s"
-            cursor.execute(query, (username,))
-            result = cursor.fetchone()
-            
-            # Verifica si ya existe un slice con el mismo nombre
-            slices = []
-            if result:
-                slices = json.loads(result[0]) if result[0] else []
-
-            if any(s.get('slice_name') == slice_name for s in slices):
-                console.print("[bold red]Ya existe un slice con ese nombre, por favor intente de nuevo.[/]")
-                continue
-
-            architecture_options = {
-                '1': "Linux",
-                '2': "Openstack"
-            }
-            display_menu("Selección de arquitectura", architecture_options, username, role)
-            architecture_choice = prompt_for_choice(architecture_options, username, role)
-
-            image_name = select_image(username, role)
-            flavor = select_flavor(username, role)
-
-            template_options = {
-                '1': "Plantilla (Árbol)",
-                '2': "Plantilla (Lineal)",
-                '3': "Plantilla (Bus)",
-                '4': "Plantilla (Malla)",
-                '5': "Plantilla (Anillo)"
-            }
-            display_menu("Plantilla", template_options, username, role)
-            template_choice = prompt_for_choice(template_options, username, role)
-
-            # Procesa según la plantilla elegida
-            nodes, internet_access, network_links, topology_type = None, None, None, None
-            if template_choice == '1':
-                nodes, internet_access, network_links, num_branches, num_levels = tree_topology(username, role)
-                topology_type = 'Árbol'
-            elif template_choice == '2':
-                nodes, internet_access, network_links = create_linear_topology(username, role)
-                topology_type = 'Lineal'
-            elif template_choice == '3':
-                nodes, internet_access, network_links = create_bus_topology(username, role)
-                topology_type = 'Bus'
-            elif template_choice == '4':
-                nodes, internet_access, network_links = create_mesh_topology(username, role)
-                topology_type = 'Malla'
-            elif template_choice == '5':
-                nodes, internet_access, network_links = create_ring_topology(username, role)
-                topology_type = 'Anillo'
-
-            # Seleccionar zona de disponibilidad
-            availability_zone = select_availability_zone(username, role)
-
-            slice_info = {
-                'timestamp': datetime.now().isoformat(),
-                'architecture': architecture_options[architecture_choice],
-                'slice_name': slice_name,
-                'nodes': nodes,
-                'topology_type': topology_type,
-                'network_links': network_links,
-                'internet_access': internet_access,
-                'image': image_name,
-                'flavor': flavor,
-                'availability_zone': availability_zone
-            }
-            if topology_type == 'Árbol':
-                slice_info['num_branches'] = num_branches
-                slice_info['num_levels'] = num_levels
-
-            slices.append(slice_info)
-            query = "INSERT INTO SLICE (username, JSON) VALUES (%s, %s) ON DUPLICATE KEY UPDATE JSON = %s"
-            cursor.execute(query, (username, json.dumps(slices), json.dumps(slices)))
-            cnx.commit()
-
-            log_event(username, role, f"Slice '{slice_name}' creado con éxito.")
-            console.print(f"[bold green]Slice '{slice_name}' creado con éxito.[/]")
-
-            cursor.close()
-            cnx.close()
-
-        elif choice == '2':
-            cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
-            cursor = cnx.cursor()
-            query = "SELECT JSON FROM SLICE WHERE username = %s"
-            cursor.execute(query, (username,))
-            result = cursor.fetchone()
-            
-            slices = json.loads(result[0]) if result and result[0] else []
-            table = Table(title="Slices del Usuario", show_header=True, header_style="bold magenta")
-            table.add_column("Nombre", style="dim", width=12)
-            table.add_column("Tipo", style="dim")
-            table.add_column("Nodos", justify="right")
-            table.add_column("Internet", justify="center")
-
-            for s in slices:
-                table.add_row(s['slice_name'], s['topology_type'], str(len(s['nodes'])), "Sí" if s['internet_access'] else "No")
-
-            console.print(table)
-
-            cursor.close()
-            cnx.close()
-
-        elif choice == '3':
-            slice_name = console.input("Nombre del Slice: ")
-            cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
-            cursor = cnx.cursor()
-            query = "SELECT JSON FROM SLICE WHERE username = %s"
-            cursor.execute(query, (username,))
-            result = cursor.fetchone()
-            
-            slices = json.loads(result[0]) if result and result[0] else []
-            found = False
-            for s in slices:
-                if s['slice_name'] == slice_name:
-                    console.print(json.dumps(s, indent=4))
-                    found = True
-                    break
-
-            if not found:
-                console.print("[bold red]Slice no encontrado.[/]")
-
-            cursor.close()
-            cnx.close()
-
-        elif choice == '4':
-            slice_name = console.input("Nombre del Slice: ")
-            cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
-            cursor = cnx.cursor()
-            query = "SELECT JSON FROM SLICE WHERE username = %s"
-            cursor.execute(query, (username,))
-            result = cursor.fetchone()
-            
-            slices = json.loads(result[0]) if result and result[0] else []
-            found = False
-            for s in slices:
-                if s['slice_name'] == slice_name:
-                    if s['topology_type'] == 'Árbol':
-                        G = nx.balanced_tree(r=s['num_branches'], h=s['num_levels'])
-                    elif s['topology_type'] == 'Lineal':
-                        G = nx.path_graph(len(s['nodes']))
-                    elif s['topology_type'] == 'Bus':
-                        G = nx.Graph()
-                        G.add_nodes_from(range(len(s['nodes'])))
-                        for i, link in enumerate(s['network_links']):
-                            G.add_edge(link['source'], link['target'])
-                    elif s['topology_type'] == 'Malla':
-                        G = nx.complete_graph(len(s['nodes']))
-                    elif s['topology_type'] == 'Anillo':
-                        G = nx.cycle_graph(len(s['nodes']))
-                    display_topology(G, s['topology_type'], username, role)
-                    found = True
-                    break
-
-            if not found:
-                console.print("[bold red]Slice no encontrado.[/]")
-
-            cursor.close()
-            cnx.close()
-
-        elif choice == '5':
-            break
-
-    while True:
-        options = {
-            '1': "Crear Slice",
-            '2': "Listar Slices",
-            '3': "Mostrar JSON de Slice",
-            '4': "Mostrar Topologia",
-            '5': "Regresar al Menú Principal"
-        }
+        if role == 'admin':
+            options['6'] = "Ver Slices de Usuarios"
         display_menu("Gestión de Slices", options, username, role)
         choice = prompt_for_choice(options, username, role)
 
@@ -1362,7 +805,8 @@ def slice_management(username, role):
                     '2': "Plantilla (Lineal)",
                     '3': "Plantilla (Bus)",
                     '4': "Plantilla (Malla)",
-                    '5': "Plantilla (Anillo)"
+                    '5': "Plantilla (Anillo)",
+                    '6': "Personalizada (Mano alzada)"  # Nueva opción para topología personalizada
                 }
                 display_menu("Plantilla", template_options, username, role)
                 template_choice = prompt_for_choice(template_options, username, role)
@@ -1371,7 +815,7 @@ def slice_management(username, role):
                     console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
                     console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
                     nodes, internet_access, network_links, num_branches, num_levels = tree_topology(username, role)
-                    topology_type = 'Árbol'
+                    topology_type = 'Árbol'   
                 elif template_choice == '2':
                     console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
                     console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
@@ -1392,12 +836,19 @@ def slice_management(username, role):
                     console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
                     nodes, internet_access, network_links = create_ring_topology(username, role)
                     topology_type = 'Anillo'
+                elif template_choice == '6':  
+                    console.print(f"[bold green]Imagen seleccionada: {image_name}[/]")
+                    console.print(f"[bold green]Flavor seleccionado: {flavor['name']} (VCPUs: {flavor['vcpus']}, Disk: {flavor['disk']} GB, RAM: {flavor['ram']} MB)[/]")
+                    nodes, internet_access, network_links = create_custom_topology(username, role)
+                    topology_type = 'Personalizada'
+
 
                 availability_zone = select_availability_zone(username, role)
                 console.print(f"[bold green]Zona de disponibilidad seleccionada: {availability_zone['name']} (vCPUs: {availability_zone['vcpus']}, RAM: {availability_zone['ram']} GB, Disco: {availability_zone['disk']} GB)[/]")
 
                 slice_info = {
-                    'timestamp': datetime.datetime.now().isoformat(),
+                    #'timestamp': datetime.datetime.now().isoformat(),
+                    'timestamp': datetime.now().isoformat(),
                     'architecture': architecture_options[architecture_choice],
                     'slice_name': slice_name,
                     'nodes': nodes,
@@ -1517,7 +968,7 @@ def slice_management(username, role):
                             elif data['topology_type'] == 'Bus':
                                 G = nx.Graph()
                                 G.add_nodes_from(range(len(data['nodes'])))
-                                bus_node = len(data['nodes']) - 1  # Corrección: El nodo del bus es el último nodo agregado
+                                bus_node = len(data['nodes']) - 1
                                 for link in data['network_links']:
                                     G.add_edge(link['source'], link['target'])
                             elif data['topology_type'] == 'Malla':
@@ -1526,6 +977,12 @@ def slice_management(username, role):
                                     G.add_edge(link['source'], link['target'])
                             elif data['topology_type'] == 'Anillo':
                                 G = nx.cycle_graph(len(data['nodes']))
+                                for link in data['network_links']:
+                                    G.add_edge(link['source'], link['target'])
+                            elif data['topology_type'] == 'Personalizada': # Manejo de topología personalizada
+                                G = nx.Graph()
+                                for node in data['nodes']:
+                                    G.add_node(node['id'])
                                 for link in data['network_links']:
                                     G.add_edge(link['source'], link['target'])
                             else:
@@ -1542,28 +999,71 @@ def slice_management(username, role):
             finally:
                 cursor.close()
                 cnx.close()
-
         elif choice == '5':
             log_event(username, role, "Regresando al menú principal.")
             break
+        elif choice == '6' and role == 'admin':
+            while True:
+                options = {
+                    '1': "Listar Slices",
+                    '2': "Mostrar JSON de Slice",
+                    '3': "Mostrar Topología",
+                    '4': "Regresar al Menú de Gestión de Slices"
+                }
+                display_menu("Ver Slices de Usuarios", options, username, role)
+                choice = prompt_for_choice(options, username, role)
+                if choice in ['1', '2', '3']:
+                    target_username = console.input("Ingrese el nombre de usuario: ")
+                    
+                if choice == '1':
+                    list_user_slices(target_username, username, role)
+                elif choice == '2':
+                    show_user_slice_json(target_username, username, role)
+                elif choice == '3':
+                    show_user_slice_topology(target_username, username, role)
+                elif choice == '4':
+                    break
 
-"""
-def user_management():
-    while True:
-        options = {
-            '1': "Listar Usuarios",
-            '2': "Crear Usuario",
-            '3': "Regresar al Menú Principal"
-        }
-        display_menu("Gestión de Usuarios", options)
-        choice = prompt_for_choice(options)
-        if choice == '1':
-            list_users()
-        elif choice == '2':
-            create_user()
-        elif choice == '3':
-            break
-"""
+def change_password(username, role):
+    try:
+        cnx = mariadb.connect(user='root', password='Cisco12345',
+                                      host='127.0.0.1',
+                                      database='mydb')
+        cursor = cnx.cursor()
+
+        old_password = console.input("Ingrese su contraseña actual: ", password=True)
+        old_password_hash = hashlib.sha256(old_password.encode()).hexdigest()
+
+        # Verificar contraseña antigua
+        query = ("SELECT password FROM usuario WHERE username = %s")
+        cursor.execute(query, (username,))
+        result = cursor.fetchone()
+
+        if result is not None and result[0] == old_password_hash:
+            while True:
+                new_password = console.input("Ingrese su nueva contraseña: ", password=True)
+                confirm_password = console.input("Confirme su nueva contraseña: ", password=True)
+                if new_password == confirm_password:
+                    new_password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+                    query = ("UPDATE usuario SET password = %s WHERE username = %s")
+                    cursor.execute(query, (new_password_hash, username))
+                    cnx.commit()
+                    console.print("[bold green]Contraseña actualizada correctamente.[/]")
+                    log_event(username, role, "Contraseña cambiada exitosamente.")
+                    break
+                else:
+                    console.print("[bold red]Las contraseñas no coinciden. Intente de nuevo.[/]")
+        else:
+            console.print("[bold red]Contraseña actual incorrecta.[/]")
+
+    except Exception as e:
+        log_event(username, role, f"Error al cambiar la contraseña: {str(e)}")
+        console.print(f"[bold red]Error al cambiar la contraseña: {str(e)}[/]")
+    finally:
+        cursor.close()
+        cnx.close()
+
+
 
 def user_management(username, role):
     while True:
@@ -1594,21 +1094,118 @@ def user_management(username, role):
         elif choice == '3':
             log_event(username, role, "Regresando al menú principal desde gestión de usuarios.")
             break
-"""
-@click.command()
-def main(): 
-    global username
-    console.print("[bold green]¡Bienvenido al Sistema de Gestión de Slices![/]")
-    console.print("[bold green]Por favor, ingrese sus datos.[/]")
-    username, role = login()
-    while True:
-        choice = main_menu(role)
-        if choice == '2':
-            console.print("[bold green]Saliendo del sistema...[/]")
-            break
-        handle_choice(choice)
 
-"""
+
+
+# Nueva función para listar slices de un usuario específico
+def list_user_slices(target_username, username, role):
+    log_event(username, role, f"Listando slices del usuario {target_username}.")
+    try:
+        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cursor = cnx.cursor()
+        query = ("SELECT JSON FROM SLICE WHERE username = %s")
+        cursor.execute(query, (target_username,))
+        result = cursor.fetchone()
+
+        if result and result[0]:
+            slices = json.loads(result[0])
+            table = Table(title=f"Slices del Usuario {target_username}", show_header=True, header_style="bold magenta")
+            table.add_column("Nombre", style="dim", width=12)
+            table.add_column("Tipo", style="dim")
+            table.add_column("Nodos", justify="right")
+            table.add_column("Internet", justify="center")
+
+            for s in slices:
+                table.add_row(
+                    s['slice_name'],
+                    s['topology_type'],
+                    str(len(s['nodes'])),
+                    "Sí" if s['internet_access'] else "No"
+                )
+            console.print(table)
+        else:
+            console.print(f"[bold red]No se encontraron slices para el usuario {target_username}.[/]")
+        log_event(username, role, f"Slices del usuario {target_username} listados correctamente.")
+    except Exception as e:
+        log_event(username, role, f"Error al listar slices del usuario {target_username}: {str(e)}")
+        console.print(f"[bold red]Error al listar slices del usuario {target_username}: {str(e)}[/]")
+    finally:
+        cursor.close()
+        cnx.close()
+
+# Nueva función para mostrar JSON de un slice de un usuario específico
+def show_user_slice_json(target_username, username, role):
+    log_event(username, role, f"Mostrando JSON del slice del usuario {target_username}.")
+    slice_name = console.input("Nombre del Slice: ")
+    try:
+        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cursor = cnx.cursor()
+        query = ("SELECT JSON FROM SLICE WHERE username = %s")
+        cursor.execute(query, (target_username,))
+        result = cursor.fetchone()
+        if result and result[0]:
+            slices = json.loads(result[0])
+            found = False
+            for s in slices:
+                if s['slice_name'] == slice_name:
+                    console.print(json.dumps(s, indent=4))
+                    found = True
+                    break
+            if not found:
+                console.print(f"[bold red]Slice '{slice_name}' no encontrado para el usuario {target_username}.[/]")
+        else:
+            console.print(f"[bold red]No se encontraron slices para el usuario {target_username}.[/]")
+    except Exception as e:
+        log_event(username, role, f"Error al mostrar JSON del slice del usuario {target_username}: {str(e)}")
+        console.print(f"[bold red]Error al mostrar JSON del slice del usuario {target_username}: {str(e)}[/]")
+    finally:
+        cursor.close()
+        cnx.close()
+
+# Nueva función para mostrar la topología de un slice de un usuario específico
+def show_user_slice_topology(target_username, username, role):
+    log_event(username, role, f"Mostrando la topología del slice del usuario {target_username}.")
+    slice_name = console.input("Nombre del Slice: ")
+    try:
+        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cursor = cnx.cursor()
+        query = ("SELECT JSON FROM SLICE WHERE username = %s")
+        cursor.execute(query, (target_username,))
+        result = cursor.fetchone()
+        if result and result[0]:
+            slices = json.loads(result[0])
+            found = False
+            for s in slices:
+                if s['slice_name'] == slice_name:
+                    if s['topology_type'] == 'Árbol':
+                        G = nx.balanced_tree(r=s['num_branches'], h=s['num_levels'])
+                    elif s['topology_type'] == 'Lineal':
+                        G = nx.path_graph(len(s['nodes']))
+                    elif s['topology_type'] == 'Bus':
+                        G = nx.Graph()
+                        G.add_nodes_from(range(len(s['nodes'])))
+                        for i, link in enumerate(s['network_links']):
+                            G.add_edge(link['source'], link['target'])
+                    elif s['topology_type'] == 'Malla':
+                        G = nx.complete_graph(len(s['nodes']))
+                    elif s['topology_type'] == 'Anillo':
+                        G = nx.cycle_graph(len(s['nodes']))
+                    display_topology(G, s['topology_type'], username, role)
+                    found = True
+                    break
+            if not found:
+                console.print(f"[bold red]Slice '{slice_name}' no encontrado para el usuario {target_username}.[/]")
+        else:
+            console.print(f"[bold red]No se encontraron slices para el usuario {target_username}.[/]")
+    except Exception as e:
+        log_event(username, role, f"Error al mostrar la topología del slice del usuario {target_username}: {str(e)}")
+        console.print(f"[bold red]Error al mostrar la topología del slice del usuario {target_username}: {str(e)}[/]")
+    finally:
+        cursor.close()
+        cnx.close()
+
+
+
 @click.command()
 def main():
     global username
