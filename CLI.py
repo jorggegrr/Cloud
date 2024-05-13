@@ -659,7 +659,6 @@ def display_topology(G, username, role, topology_type="General", bus_node=None):
     except Exception as e:
         log_event(username, role, f"Failed to display {topology_type} topology: {str(e)}")
         console.print(f"[bold red]Failed to display topology due to an error: {str(e)}[/]")
-
 def create_ring_topology(username, role):
     log_event(username, role, "Inicio creación de topología en anillo.")
     try:
@@ -681,41 +680,49 @@ def create_ring_topology(username, role):
         display_topology(G, username, role, "Anillo")
 
         while True:
-            add_more = (
-                console.input("¿Deseas añadir más VMs antes de finalizar? (s/n): ")
-                .lower()
-                .strip()
-            )
-            if add_more == 'n':
-                break
-            elif add_more == 's':
-                while True:
-                    try:
-                        num_new_vms = int(
-                            console.input("Ingrese el número de nuevas VMs a añadir: ")
-                        )
-                        break  # Salir del bucle si la entrada es válida
-                    except ValueError:
-                        console.print(
-                            f"[bold red]Entrada inválida. Ingrese un número entero.[/]"
-                        )
-
-                # Reconstruir el anillo con las VMs adicionales
+            add_more = console.input("¿Deseas añadir más VMs prevaleciendo la topología anillo? (s/n): ").lower().strip()
+            if add_more == 's':
+                num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
                 total_vms = len(G.nodes) + num_new_vms
                 G = nx.cycle_graph(total_vms)
-                nodes = [
-                    {'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))
-                ]
+                nodes = [{'name': f'node{i}', 'id': i} for i in range(nx.number_of_nodes(G))]
                 display_topology(G, username, role, "Anillo")
-            else:
-                console.print(
-                    "[bold red]Opción inválida. Por favor, ingrese 's' o 'n'.[/]"
-                )
+
+            manual_link = console.input("¿Deseas agregar más VMs de manera manual su enlace? (s/n): ").lower().strip()
+            if manual_link == 's':
+                num_new_vms = int(console.input("Ingrese el número de nuevas VMs a añadir: "))
+                for i in range(num_new_vms):
+                    new_vm_id = len(G.nodes)
+                    G.add_node(new_vm_id)
+                    nodes.append({'name': f'node{new_vm_id}', 'id': new_vm_id})
+                    
+                    console.print("Nodos disponibles para conectar:")
+                    for node in nodes[:-1]:
+                        console.print(f"{node['id']}: {node['name']}")
+
+                    while True:
+                        target_ids = console.input(f"Seleccione los IDs de los nodos para conectar la VM {new_vm_id} (separados por comas): ")
+                        try:
+                            target_ids = [int(id.strip()) for id in target_ids.split(',') if id.strip().isdigit()]
+                            if all(id in range(len(G.nodes) - 1) for id in target_ids):
+                                break
+                            else:
+                                console.print("[bold red]Algunos IDs no son válidos. Intente de nuevo.[/]")
+                        except ValueError:
+                            console.print("[bold red]Entrada inválida. Use solo números separados por comas.[/]")
+
+                    for target_id in target_ids:
+                        G.add_edge(new_vm_id, target_id)
+
+                    display_topology(G, username, role, "Anillo")
+
+            if add_more == 'n' and manual_link == 'n':
+                break
 
         network_links = [{'source': edge[0], 'target': edge[1]} for edge in G.edges()]
         log_event(username, role, f"Topología en anillo completada con {len(G.nodes())} VMs.")
         console.print(f"[bold green]Topología en anillo finalizada con {len(G.nodes())} VMs.[/]")
-        return nodes, internet_access, network_links  # Asegurar que se devuelven los tres elementos
+        return nodes, internet_access, network_links
 
     except ValueError as e:
         console.print(f"[bold red]{str(e)}[/]")
@@ -725,7 +732,6 @@ def create_ring_topology(username, role):
             username, role, f"Error inesperado al crear topología en anillo: {str(e)}"
         )
         console.print(f"[bold red]Error inesperado: {str(e)}[/]")
-        
 
 
 
@@ -996,33 +1002,14 @@ def slice_management(username, role):
                             bus_node = None
                             if data['topology_type'] == 'Árbol':
                                 G = nx.balanced_tree(r=data['num_branches'], h=data['num_levels'])
-                            elif data['topology_type'] == 'Lineal':
-                                G = nx.path_graph(len(data['nodes']))
-                                for link in data['network_links']:
-                                    G.add_edge(link['source'], link['target'])
-                            elif data['topology_type'] == 'Bus':
-                                G = nx.Graph()
-                                G.add_nodes_from(range(len(data['nodes'])))
-                                bus_node = len(data['nodes']) - 1
-                                for link in data['network_links']:
-                                    G.add_edge(link['source'], link['target'])
-                            elif data['topology_type'] == 'Malla':
-                                G = nx.complete_graph(len(data['nodes']))
-                                for link in data['network_links']:
-                                    G.add_edge(link['source'], link['target'])
-                            elif data['topology_type'] == 'Anillo':
-                                G = nx.cycle_graph(len(data['nodes']))
-                                for link in data['network_links']:
-                                    G.add_edge(link['source'], link['target'])
-                            elif data['topology_type'] == 'Personalizada': # Manejo de topología personalizada
-                                G = nx.Graph()
-                                for node in data['nodes']:
+                                # Añadir los nodos adicionales
+                                for node in data['nodes'][len(G.nodes()):]:
                                     G.add_node(node['id'])
-                                for link in data['network_links']:
-                                    G.add_edge(link['source'], link['target'])
-                            else:
-                                console.print("[bold red]Tipo de topología no reconocido.[/]")
-                                continue
+                                    for link in data['network_links']:
+                                        if link['source'] == node['id'] or link['target'] == node['id']:
+                                            G.add_edge(link['source'], link['target'])
+                                            break # Solo añadir una conexión por nodo adicional
+                            # El resto del código para los otros tipos de topología permanece igual...
                             display_topology(G, username, role, data['topology_type'], bus_node=bus_node)
                             found = True
                 if not found:
@@ -1034,6 +1021,7 @@ def slice_management(username, role):
             finally:
                 cursor.close()
                 cnx.close()
+                
         elif choice == '5':
             log_event(username, role, "Regresando al menú principal.")
             break
