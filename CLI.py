@@ -182,7 +182,6 @@ def display_menu(title, options, username, role):
         log_event(username, role, f"Error al mostrar menú '{title}': {str(e)}")
         console.print(f"[bold red]Error al mostrar menú '{title}': {str(e)}[/]")
 
-
 def prompt_for_choice(options, username, role):
     choice = None
     while choice not in options:
@@ -1065,15 +1064,15 @@ def change_password(username, role):
 
 
 
-def user_management(username, role):
+def user_management(username, role): # <-- añadido 'username' y 'role'
     while True:
         options = {
             '1': "Listar Usuarios",
             '2': "Crear Usuario",
             '3': "Regresar al Menú Principal"
         }
-        display_menu("Gestión de Usuarios", options)
-        choice = prompt_for_choice(options)
+        display_menu("Gestión de Usuarios", options, username, role) # <-- Pasados 'username' y 'role' aquí
+        choice = prompt_for_choice(options, username, role)
         
         if choice == '1':
             log_event(username, role, "Listando usuarios.")
