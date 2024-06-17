@@ -35,7 +35,7 @@ def log_event(username, role, message):
     # Guardar log en la base de datos
     try:
         # Conexión a MariaDB
-        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
         cursor = cnx.cursor()
 
         # Obtener la zona horaria local
@@ -198,8 +198,8 @@ def prompt_for_choice(options, username, role):
 
 def login():
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345',
-                                      host='127.0.0.1',
+        cnx = mariadb.connect(user='root', password='root',
+                                      host='10.0.0.1',
                                       database='mydb')
         cursor = cnx.cursor()
         global username
@@ -284,8 +284,8 @@ def image_management(username, role):
 
 def create_user(username, role):
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345',
-                                      host='127.0.0.1',
+        cnx = mariadb.connect(user='root', password='root',
+                                      host='10.0.0.1',
                                       database='mydb')
         cursor = cnx.cursor()
         new_username = console.input("Nombre de usuario: ")
@@ -309,8 +309,8 @@ def create_user(username, role):
 
 def list_users(username, role):
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345',
-                                      host='127.0.0.1',
+        cnx = mariadb.connect(user='root', password='root',
+                                      host='10.0.0.1',
                                       database='mydb')
         cursor = cnx.cursor()
         query = ("SELECT username, rol FROM usuario")
@@ -807,7 +807,7 @@ def slice_management(username, role):
             log_event(username, role, "Intentando crear un nuevo slice.")
             slice_name = console.input("Nombre del Slice: ")
             try:
-                cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+                cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
                 cursor = cnx.cursor()
                 query = ("SELECT JSON FROM SLICE WHERE username = %s")
                 cursor.execute(query, (username,))
@@ -921,7 +921,7 @@ def slice_management(username, role):
         elif choice == '2':
             log_event(username, role, "Listando slices.")
             try:
-                cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+                cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
                 cursor = cnx.cursor()
                 query = ("SELECT JSON FROM SLICE WHERE username = %s")
                 cursor.execute(query, (username,))
@@ -954,7 +954,7 @@ def slice_management(username, role):
             log_event(username, role, "Mostrando JSON de un slice específico.")
             slice_name = console.input("Nombre del Slice: ")
             try:
-                cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+                cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
                 cursor = cnx.cursor()
                 query = ("SELECT JSON FROM SLICE WHERE username = %s")
                 cursor.execute(query, (username,))
@@ -979,7 +979,7 @@ def slice_management(username, role):
             log_event(username, role, "Mostrando la topología de un slice específico.")
             slice_name = console.input("Nombre del Slice: ")
             try:
-                cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+                cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
                 cursor = cnx.cursor()
                 query = ("SELECT JSON FROM SLICE WHERE username = %s")
                 cursor.execute(query, (username,))
@@ -1045,8 +1045,8 @@ def slice_management(username, role):
 
 def change_password(username, role):
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345',
-                                      host='127.0.0.1',
+        cnx = mariadb.connect(user='root', password='root',
+                                      host='10.0.0.1',
                                       database='mydb')
         cursor = cnx.cursor()
 
@@ -1120,7 +1120,7 @@ def user_management(username, role): # <-- añadido 'username' y 'role'
 def list_user_slices(target_username, username, role):
     log_event(username, role, f"Listando slices del usuario {target_username}.")
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
         cursor = cnx.cursor()
         query = ("SELECT JSON FROM SLICE WHERE username = %s")
         cursor.execute(query, (target_username,))
@@ -1157,7 +1157,7 @@ def show_user_slice_json(target_username, username, role):
     log_event(username, role, f"Mostrando JSON del slice del usuario {target_username}.")
     slice_name = console.input("Nombre del Slice: ")
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
         cursor = cnx.cursor()
         query = ("SELECT JSON FROM SLICE WHERE username = %s")
         cursor.execute(query, (target_username,))
@@ -1186,7 +1186,7 @@ def show_user_slice_topology(target_username, username, role):
     log_event(username, role, f"Mostrando la topología del slice del usuario {target_username}.")
     slice_name = console.input("Nombre del Slice: ")
     try:
-        cnx = mariadb.connect(user='root', password='Cisco12345', host='127.0.0.1', database='mydb')
+        cnx = mariadb.connect(user='root', password='root', host='10.0.0.1', database='mydb')
         cursor = cnx.cursor()
         query = ("SELECT JSON FROM SLICE WHERE username = %s")
         cursor.execute(query, (target_username,))
