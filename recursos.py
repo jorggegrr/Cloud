@@ -3,6 +3,17 @@ import mariadb
 import json
 import time
 
+
+def log_to_database(cursor, module_name, username, role, message):
+    """Función para registrar eventos en la tabla de logs."""
+    try:
+        query = "INSERT INTO logs_monitoreo_recursos (nombre_modulo, username, role, message) VALUES (%s, %s, %s, %s);"
+        cursor.execute(query, (module_name, username, role, message))
+        cursor.connection.commit()  # Forzar un commit después de insertar el log
+        print("Log command executed successfully.")  # Imprimir confirmación de que el comando se ejecutó
+    except Exception as e:
+        print(f"Error logging to database: {e}")  # Capturar y mostrar cualquier error durante el logueo
+
 def get_resource_data(hostname, username, password):
     """Obtiene datos de uso de vCPU, RAM y disco a través de SSH."""
     
@@ -76,14 +87,22 @@ def update_database(data):
         # Consulta "upsert" para actualizar o insertar
         query = "INSERT INTO recursos (hostname, datos) VALUES (%s, %s) ON DUPLICATE KEY UPDATE datos = VALUES(datos);"
         cursor.execute(query, (data['hostname'], json_data))
+        
         # print(f"Datos de {hostname} actualizados o insertados en la base de datos.")
 
         cnx.commit()
+        log_to_database(cursor, 'recursos', 'admin', 'system', f"Datos actualizados o insertados para {data['hostname']}")
+   
     except mariadb.Error as e:
         print(f"Error al actualizar la base de datos: {e}")
+        if cursor:  # Verificar si el cursor aún está disponible para usar
+            log_to_database(cursor, 'recursos', 'admin', 'system', f"Error al actualizar datos históricos: {e}")
+
     finally:
-        cursor.close()
-        cnx.close()
+        if cursor:
+            cursor.close()
+        if cnx:
+            cnx.close()
 
 def update_historico(consolidated_data):
     try:
@@ -100,11 +119,18 @@ def update_historico(consolidated_data):
         query = "INSERT INTO historico (data) VALUES (%s)"
         cursor.execute(query, (json_data,))
         cnx.commit()
+        log_to_database(cursor, 'recursos', 'admin', 'system', "Datos históricos actualizados.")
+  
     except mariadb.Error as e:
         print(f"Error al actualizar la base de datos: {e}")
+        if cursor:  # Verificar si el cursor aún está disponible para usar
+            log_to_database(cursor, 'recursos', 'admin', 'system', f"Error al actualizar datos históricos: {e}")
+
     finally:
-        cursor.close()
-        cnx.close()
+        if cursor:
+            cursor.close()
+        if cnx:
+            cnx.close()
 
 # Configuración de las máquinas a monitorear
 workers = {
